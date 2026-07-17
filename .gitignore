@@ -1,0 +1,42 @@
+# Claude Code
+.claude/
+
+# Personal NWC files
+nwc/
+
+# IntelliJ
+*.iml
+.idea/
+
+# nwc-viewer: only keep lib/ and inflate.min.js
+nwc-viewer/.git/
+nwc-viewer/node_modules/
+nwc-viewer/nwcs/
+nwc-viewer/samples/
+nwc-viewer/soundfonts/
+nwc-viewer/screenshots/
+nwc-viewer/plans/
+nwc-viewer/scripts/
+nwc-viewer/test/
+nwc-viewer/src/
+nwc-viewer/vendor/bravura-1.211/
+nwc-viewer/vendor/soundfont-engine/
+nwc-viewer/vendor/webmscore/
+nwc-viewer/vendor/fonts/
+nwc-viewer/vendor/musical.js
+nwc-viewer/vendor/musical.min.js
+nwc-viewer/vendor/opentype.min.js
+nwc-viewer/bin/
+nwc-viewer/index.html
+nwc-viewer/nwc2xml_converter.html
+nwc-viewer/FesteBurg.nwc
+nwc-viewer/CHANGELOG.md
+nwc-viewer/README.md
+nwc-viewer/.eslintrc.json
+nwc-viewer/.github/
+nwc-viewer/.travis.yml
+nwc-viewer/.gitignore
+nwc-viewer/lib/PARSER_INTEGRATION.md
+nwc-viewer/lib/nwc2xml/README.md
+nwc-viewer/package.json
+nwc-viewer/package-lock.json
