@@ -144,6 +144,21 @@
     .btn-download.xml:hover  { background: #6a59e0; }
     .btn-download.midi { background: #2e8b5e; }
     .btn-download.midi:hover { background: #257a52; }
+    .btn-download.view { background: #c77d2e; }
+    .btn-download.view:hover { background: #b06d24; }
+
+    .viewer-link {
+      margin-top: 1.4rem;
+      font-size: 0.85rem;
+      color: #888;
+    }
+
+    .viewer-link a {
+      color: #a89cf9;
+      text-decoration: none;
+    }
+
+    .viewer-link a:hover { text-decoration: underline; }
 
     .error {
       width: 100%;
@@ -216,7 +231,12 @@
       <a class="btn-download xml"  id="download-xml"  href="#" download="">⬇ MusicXML (가사 포함)</a>
       <a class="btn-download midi" id="download-midi" href="#" download="">⬇ MIDI (가사 미지원)</a>
     </div>
+    <div class="btn-row" style="margin-top: 0.6rem;">
+      <a class="btn-download view" id="open-viewer" href="./nwc-viewer/index.html" target="_blank" rel="opener">🎼 악보 뷰어에서 보기</a>
+    </div>
   </div>
+
+  <p class="viewer-link">파일 없이 둘러보려면 <a href="./nwc-viewer/index.html" target="_blank" rel="opener">NWC Viewer</a>를 바로 열어보세요.</p>
 
   <footer>브라우저에서 직접 처리 — 파일이 서버로 전송되지 않습니다</footer>
 
@@ -374,6 +394,35 @@
     const fileInfo   = document.getElementById('file-info');
     const dlXml      = document.getElementById('download-xml');
     const dlMidi     = document.getElementById('download-midi');
+    const openViewer = document.getElementById('open-viewer');
+
+    let currentBuffer = null;
+    let currentFilename = null;
+
+    function arrayBufferToBase64(buffer) {
+      let binary = '';
+      const bytes = new Uint8Array(buffer);
+      const chunkSize = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+      }
+      return btoa(binary);
+    }
+
+    // Hand the original .nwc bytes to the embedded score viewer via
+    // sessionStorage — same-origin auxiliary tabs opened with window.open()
+    // / target="_blank" inherit a clone of the opener's sessionStorage.
+    openViewer.addEventListener('click', () => {
+      if (!currentBuffer || !currentFilename) return;
+      try {
+        sessionStorage.setItem('nwc_pending_file', JSON.stringify({
+          name: currentFilename,
+          dataBase64: arrayBufferToBase64(currentBuffer),
+        }));
+      } catch (err) {
+        console.error('뷰어로 파일을 전달하지 못했습니다:', err);
+      }
+    });
 
     const blobUrls = [];
     function revokeAll() { blobUrls.forEach(u => URL.revokeObjectURL(u)); blobUrls.length = 0; }
@@ -403,6 +452,7 @@
           const xml    = convertNWCToMusicXML(buffer);
           const nwc    = parseNWC(buffer);
           const midi   = musicXMLtoMidi(xml);
+          currentBuffer = buffer;
           showResult(file.name, xml, midi, nwc);
         } catch (err) {
           showError('변환 실패: ' + err.message);
@@ -416,6 +466,8 @@
 
     function showResult(filename, xml, midi, nwc) {
       revokeAll();
+
+      currentFilename = filename;
 
       const base = filename.replace(/\.nwc$/i, '');
       dlXml.href     = mkBlob(xml,  'application/xml');

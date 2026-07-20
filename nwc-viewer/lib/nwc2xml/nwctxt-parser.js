@@ -10,6 +10,18 @@ function fieldValue(f) {
   return idx === -1 ? '' : f.substring(idx + 1);
 }
 
+// NWCTXT backslash-escapes quote and backslash characters inside quoted
+// string fields (e.g. Title:"Dad\'s Harmony" for a literal apostrophe) —
+// unescape after stripping the surrounding quotes.
+function unescapeNwcString(s) {
+  return s.replace(/\\(.)/g, '$1');
+}
+
+// Strip surrounding quotes from a field value and unescape its contents.
+function quotedFieldValue(f) {
+  return unescapeNwcString(fieldValue(f).replace(/^"|"$/g, ''));
+}
+
 // Parse NWC lyric text into a flat syllable array for the MusicXML writer.
 // NWC format: "word1 syl-la-ble _ next-word"
 //   - spaces separate tokens
@@ -17,10 +29,12 @@ function fieldValue(f) {
 //   - "_" = melisma (extend previous syllable; writer will skip this slot)
 //   - "\n" (literal backslash-n) = phrase separator, treated as space
 function parseLyricText(raw) {
-  const text = raw
-    .replace(/^"|"$/g, '')   // strip surrounding quotes
-    .replace(/\\n/g, ' ')    // literal \n → space
-    .replace(/\n/g, ' ');    // real newline → space
+  const text = unescapeNwcString(
+    raw
+      .replace(/^"|"$/g, '')   // strip surrounding quotes
+      .replace(/\\n/g, ' ')    // literal \n → space (before generic unescape below)
+      .replace(/\n/g, ' ')     // real newline → space
+  );
 
   const syllables = [];
   for (const token of text.trim().split(/\s+/)) {
@@ -332,7 +346,7 @@ class TempoTxtObj extends NWCTxtObj {
         else if (b.includes('Half')) this.base = 1;
         else this.base = 2;
       }
-      if (f.startsWith('Text:')) this.text = fieldValue(f).replace(/^"|"$/g, '');
+      if (f.startsWith('Text:')) this.text = quotedFieldValue(f);
     }
   }
   getTempoNote() { return ['half', 'half', 'quarter', 'eighth'][this.base] || 'quarter'; }
@@ -357,7 +371,7 @@ class TextTxtObj extends NWCTxtObj {
     for (const f of fields) {
       if (f.startsWith('Text:')) {
         const t = f.substring(5);
-        this.text = t.startsWith('"') && t.endsWith('"') ? t.slice(1, -1) : t;
+        this.text = t.startsWith('"') && t.endsWith('"') ? unescapeNwcString(t.slice(1, -1)) : t;
       }
     }
   }
@@ -404,18 +418,18 @@ export function parseNWCTxt(text) {
       
       if (type === 'SongInfo') {
         for (const f of fields) {
-          if (f.startsWith('Title:')) file.title = fieldValue(f).replace(/^"|"$/g, '');
-          if (f.startsWith('Author:')) file.author = fieldValue(f).replace(/^"|"$/g, '');
-          if (f.startsWith('Lyricist:')) file.lyricist = fieldValue(f).replace(/^"|"$/g, '');
-          if (f.startsWith('Copyright1:')) file.copyright1 = fieldValue(f).replace(/^"|"$/g, '');
-          if (f.startsWith('Copyright2:')) file.copyright2 = fieldValue(f).replace(/^"|"$/g, '');
+          if (f.startsWith('Title:')) file.title = quotedFieldValue(f);
+          if (f.startsWith('Author:')) file.author = quotedFieldValue(f);
+          if (f.startsWith('Lyricist:')) file.lyricist = quotedFieldValue(f);
+          if (f.startsWith('Copyright1:')) file.copyright1 = quotedFieldValue(f);
+          if (f.startsWith('Copyright2:')) file.copyright2 = quotedFieldValue(f);
         }
       } else if (type === 'AddStaff') {
         staff = new NWCStaff(file);
         file.staffs.push(staff);
         for (const f of fields) {
-          if (f.startsWith('Name:')) staff.name = fieldValue(f).replace(/^"|"$/g, '');
-          if (f.startsWith('Group:')) staff.group = fieldValue(f).replace(/^"|"$/g, '');
+          if (f.startsWith('Name:')) staff.name = quotedFieldValue(f);
+          if (f.startsWith('Group:')) staff.group = quotedFieldValue(f);
         }
       } else if (type === 'StaffProperties' && staff) {
         for (const f of fields) {

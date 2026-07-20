@@ -1,0 +1,71 @@
+/**********************
+ *
+ *   Loading Helpers
+ *
+ **********************/
+
+function ajax(url, callback) {
+	var oReq = new XMLHttpRequest()
+	oReq.open('GET', url, true)
+	oReq.responseType = 'arraybuffer'
+
+	oReq.onload = function (oEvent) {
+		console.log('ajax done for ', url)
+		var arrayBuffer = oReq.response
+		callback(arrayBuffer)
+	}
+
+	oReq.send()
+}
+
+// TODO Drag and Drop, File Opener
+
+// onclick="opener.click()
+
+var opener = document.getElementById('opener')
+opener.onchange = function () {
+	var files = opener.files
+	handleFileList(files)
+}
+
+document.getElementById('open').onclick = () => opener.click()
+
+function handleFileList(files) {
+	if (files && files.length) {
+		console.log(files)
+		// TODO filter file.name / name.type
+		readFile(files[0])
+	}
+}
+
+function readFile(file) {
+	var reader = new FileReader()
+	reader.onload = function (event) {
+		var arraybuffer = event.target.result
+		console.log(event)
+		processData(arraybuffer, file.name)
+	}
+	reader.readAsArrayBuffer(file)
+}
+
+function setupDragAndDrop(element) {
+	element.ondragover = function handleDragOver(evt) {
+		evt.stopPropagation()
+		evt.preventDefault()
+		evt.dataTransfer.dropEffect = 'copy' // Explicitly show this is a copy.
+	}
+
+	element.ondrop = function handleFileSelect(evt) {
+		evt.stopPropagation()
+		evt.preventDefault()
+		var files = evt.dataTransfer.files
+
+		handleFileList(files)
+	}
+}
+
+if (typeof document !== 'undefined' && document.body) {
+	setupDragAndDrop(document.body)
+}
+
+export { ajax }

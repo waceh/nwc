@@ -1,0 +1,536 @@
+<html lang="ko">
+	<head>
+		<title>NWC Viewer</title>
+		<meta charset="UTF-8" />
+		<meta name="description" content="NoteWorthy Composer(.nwc) 파일을 브라우저에서 바로 보고 재생할 수 있는 악보 뷰어" />
+		<meta name="keywords" content="악보,NWC,NoteWorthy Composer,음악,뷰어" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<style>
+			/* Companion text font for the music font (Bravura is the only one vendored) */
+			@font-face { font-family: 'BravuraText'; src: url('vendor/bravura-1.211/otf/BravuraText.otf') format('opentype'); }
+		</style>
+	</head>
+	<body>
+		<style>
+			/* Palette matched to the converter page (../index.html) so the two
+			   feel like one product rather than two different apps. */
+			:root {
+				--bg: #0f0f13;
+				--surface: #1a1a24;
+				--surface-hover: #242430;
+				--surface-active: #2e2e3d;
+				--text: #e8e8f0;
+				--text-dim: #888;
+				--border: #333;
+				--divider: #2a2a38;
+				--accent: #7c6af7;
+				--accent-hover: #6a59e0;
+				--accent-text: #fff;
+				--radius: 6px;
+				--gap: 8px;
+			}
+
+			body {
+				background: var(--bg);
+				color: var(--text);
+				overflow: hidden;
+				font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+				font-size: 12px;
+				margin: 0;
+				padding: 0;
+			}
+
+			#container {
+				display: flex;
+				flex-direction: column;
+				width: 100%;
+				height: 100%;
+			}
+
+			/* Toolbar */
+			.toolbar {
+				display: flex;
+				flex-wrap: wrap;
+				align-items: center;
+				gap: var(--gap);
+				padding: 6px 10px;
+			}
+
+			.toolbar-group {
+				display: flex;
+				align-items: center;
+				gap: 4px;
+			}
+
+			.toolbar-group + .toolbar-group {
+				border-left: 1px solid var(--divider);
+				padding-left: var(--gap);
+			}
+
+			.toolbar-label {
+				font-size: 11px;
+				color: var(--text-dim);
+				user-select: none;
+			}
+
+			/* Controls */
+			button, select {
+				background: var(--surface);
+				color: var(--text);
+				border: 1px solid var(--border);
+				border-radius: var(--radius);
+				padding: 4px 8px;
+				font-size: 12px;
+				font-family: inherit;
+				cursor: pointer;
+				outline: none;
+			}
+
+			button:hover, select:hover {
+				background: var(--surface-hover);
+			}
+
+			button:active {
+				background: var(--surface-active);
+			}
+
+			button.active {
+				background: var(--accent);
+				color: var(--accent-text);
+				border-color: var(--accent);
+			}
+
+			button.active:hover {
+				background: var(--accent-hover);
+			}
+
+			input[type="range"] {
+				accent-color: var(--accent);
+				cursor: pointer;
+			}
+
+			.speed-control {
+				display: flex;
+				align-items: center;
+				gap: 4px;
+				font-size: 11px;
+				color: var(--text-dim);
+			}
+
+			.speed-control input[type="number"] {
+				background: var(--surface);
+				color: var(--text);
+				border: 1px solid var(--border);
+				border-radius: var(--radius);
+				padding: 2px 4px;
+				font-size: 11px;
+				font-family: inherit;
+				outline: none;
+				-moz-appearance: textfield;
+			}
+
+			.speed-control input[type="number"]::-webkit-inner-spin-button,
+			.speed-control input[type="number"]::-webkit-outer-spin-button {
+				-webkit-appearance: none;
+				margin: 0;
+			}
+
+			/* Segmented button group */
+			.btn-group {
+				display: inline-flex;
+				border-radius: var(--radius);
+				overflow: hidden;
+			}
+
+			.btn-group button {
+				border-radius: 0;
+				border-right-color: var(--bg);
+				margin: 0;
+				padding: 4px 10px;
+			}
+
+			.btn-group button:first-child {
+				border-radius: var(--radius) 0 0 var(--radius);
+			}
+
+			.btn-group button:last-child {
+				border-radius: 0 var(--radius) var(--radius) 0;
+				border-right-color: var(--border);
+			}
+
+			/* Popover panel */
+			.popover {
+				display: none;
+				position: absolute;
+				top: calc(100% + 4px);
+				left: 0;
+				z-index: 100;
+				background: var(--surface);
+				border: 1px solid var(--border);
+				border-radius: var(--radius);
+				padding: 12px;
+				min-width: 260px;
+				box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+			}
+
+			.popover.open {
+				display: flex;
+				flex-direction: column;
+				gap: 8px;
+			}
+
+			.popover label {
+				display: flex;
+				align-items: center;
+				gap: 6px;
+				font-size: 11px;
+				color: var(--text-dim);
+				white-space: nowrap;
+			}
+
+			.popover label span:first-child {
+				min-width: 80px;
+			}
+
+			.popover input[type="range"] {
+				width: 100px;
+			}
+
+			.popover .slider-value {
+				min-width: 32px;
+				text-align: right;
+				font-variant-numeric: tabular-nums;
+			}
+
+			/* Advanced panel — collapsible drawer below the toolbar, toggled by
+			   the 고급 button. Keeps the primary toolbar short (important on
+			   small/tablet screens) while still exposing font, ink, spacing,
+			   and (localhost-only) debug controls. */
+			#advanced_panel {
+				display: none;
+				flex-direction: column;
+				gap: var(--gap);
+				padding: 8px 10px;
+				border-top: 1px solid var(--divider);
+				border-bottom: 1px solid var(--divider);
+			}
+
+			#advanced_panel.open {
+				display: flex;
+			}
+
+			/* Rows can hold many controls (esp. the ink group) — wrap instead
+			   of letting flex-shrink squish button/select text vertically. */
+			#advanced_panel .toolbar-group {
+				flex-wrap: wrap;
+				row-gap: 6px;
+			}
+
+			#advanced_panel .toolbar-group > button,
+			#advanced_panel .toolbar-group > select {
+				flex: 0 0 auto;
+			}
+
+			#advanced_panel label {
+				display: flex;
+				align-items: center;
+				gap: 6px;
+				font-size: 11px;
+				color: var(--text-dim);
+				white-space: nowrap;
+			}
+
+			#advanced_panel label span:first-child {
+				min-width: 80px;
+			}
+
+			#advanced_panel input[type="range"] {
+				width: 100px;
+			}
+
+			#advanced_panel .slider-value {
+				min-width: 32px;
+				text-align: right;
+				font-variant-numeric: tabular-nums;
+			}
+
+			/* Score area */
+			#score {
+				overflow: auto;
+				flex: 1 0;
+				padding: 0;
+			}
+
+			canvas {
+				background: #fff;
+				position: fixed;
+			}
+
+			#invisible_canvas {
+				display: block;
+				opacity: 0.9;
+			}
+
+			/* Misc */
+			#logo {
+				font-size: 15px;
+				font-weight: 600;
+				letter-spacing: -0.3px;
+				color: var(--text);
+			}
+
+			#logo:hover {
+				color: var(--accent);
+			}
+
+			#footer {
+				padding: 6px 12px;
+				font-size: 10px;
+				color: var(--text-dim);
+			}
+
+			a {
+				color: var(--text-dim);
+				text-decoration: none;
+			}
+
+			a:hover {
+				color: var(--text);
+			}
+
+			h4 {
+				display: inline-block;
+			}
+
+			.time-display {
+				font-size: 11px;
+				min-width: 85px;
+				text-align: center;
+				font-variant-numeric: tabular-nums;
+				color: var(--text-dim);
+			}
+		</style>
+
+		<div id="container">
+			<div id="top">
+				<div class="toolbar">
+					<!-- File -->
+					<div class="toolbar-group">
+						<a href="../index.html" id="logo">NWC Viewer</a>
+						<button id="open">Open</button>
+						<input type="file" id="opener" accept=".nwc,.nwz,.nwctxt,.mid,.midi,.mscx,.mscz,.musicxml,.mxl,.xml" hidden />
+						<a href="../index.html"><button title="NWC를 MusicXML/MIDI로 변환">Convert</button></a>
+					</div>
+
+					<!-- Playback -->
+					<div class="toolbar-group">
+						<button id="play" title="재생 / 일시정지">재생</button>
+						<button id="stop" title="정지">정지</button>
+						<span id="playback_time" class="time-display">0:00 / 0:00</span>
+						<input type="range" id="progress_bar"
+							min="0" max="1" step="0.001" value="0"
+							style="width: 120px;" />
+						<label class="speed-control" title="재생 속도">
+							<input type="range" id="speed_slider"
+								min="0.1" max="3" step="0.05" value="1"
+								style="width: 70px;" />
+							<input type="number" id="speed_input"
+								min="0.1" max="4" step="0.05" value="1"
+								style="width: 48px;" />x
+						</label>
+						<select id="solo_staff" title="특정 파트만 재생">
+							<option value="all">전체 파트</option>
+						</select>
+						<button id="autoscroll_toggle" class="active" title="재생 중 자동 스크롤">자동 스크롤</button>
+					</div>
+				</div>
+
+				<div class="toolbar">
+					<!-- Layout -->
+					<div class="toolbar-group">
+						<span class="toolbar-label">레이아웃</span>
+						<div class="btn-group" id="layout_group">
+							<button data-mode="scroll">스크롤</button>
+							<button data-mode="wrap" class="active">줄바꿈</button>
+							<button data-mode="page">페이지</button>
+						</div>
+						<button id="parser_toggle" title="악보 파싱 방식: 멜로디 / 원본">멜로디</button>
+						<div class="btn-group" id="orientation_group" style="display: none;">
+							<button data-orient="portrait" class="active">세로</button>
+							<button data-orient="landscape">가로</button>
+						</div>
+						<select id="page_view_mode" style="display: none;" title="페이지 보기 방식">
+							<option value="vertical">세로로 보기</option>
+							<option value="single-page">한 페이지씩</option>
+							<option value="two-up">두 페이지씩</option>
+							<option value="horizontal">가로로 보기</option>
+						</select>
+						<span id="page_nav" style="display: none;">
+							<button id="page_prev" title="이전 페이지" style="font-size: 11px; padding: 2px 6px;">&lt;</button>
+							<input id="page_input" type="number" min="1" value="1" title="페이지 이동" style="width: 32px; text-align: center; font-size: 11px; padding: 1px 2px; -moz-appearance: textfield; border: 1px solid var(--border, #ccc); border-radius: 3px;">
+							<span id="page_indicator" style="font-size: 11px; color: var(--text-dim);"> / 1</span>
+							<button id="page_next" title="다음 페이지" style="font-size: 11px; padding: 2px 6px;">&gt;</button>
+						</span>
+					</div>
+
+					<!-- View -->
+					<div class="toolbar-group">
+						<span class="toolbar-label">확대/축소</span>
+						<input type="range" id="zoom_slider"
+							min="0.25" max="4.0" step="0.01" value="1.0"
+							oninput="onZoomSliderInput(parseFloat(this.value))"
+							style="width: 80px;" />
+						<span id="zoom_label" style="font-size: 11px; min-width: 36px; text-align: center; color: var(--text-dim);">100%</span>
+						<button id="fit_width_btn" title="화면 너비에 맞추기" style="font-size: 11px; padding: 2px 6px;">W</button>
+						<button id="fit_height_btn" title="화면 높이에 맞추기" style="font-size: 11px; padding: 2px 6px;">H</button>
+					</div>
+
+					<!-- Advanced panel toggle -->
+					<div class="toolbar-group">
+						<button id="advanced_toggle" title="음표 간격 등 고급 설정 보기/숨기기">고급</button>
+					</div>
+				</div>
+			</div>
+
+			<!-- Advanced panel — hidden by default, toggled by the 고급 button above.
+			     Bundles the less-frequently-used controls (font, ink effect,
+			     spacing tuning, and localhost-only debug tools) out of the main
+			     toolbar so it stays short on small/tablet screens. -->
+			<div id="advanced_panel">
+				<div class="toolbar-group">
+					<span class="toolbar-label">MuseScore</span>
+					<select id="mscore_import_mode" title="MuseScore 불러오기 엔진">
+						<option value="webmscore">WebMscore</option>
+						<option value="jsparser">JS 파서</option>
+					</select>
+				</div>
+
+				<div class="toolbar-group">
+					<span class="toolbar-label">크기</span>
+					<button id="size_down" title="보표 크기 줄이기">-</button>
+					<button id="size_up" title="보표 크기 키우기">+</button>
+					<select id="page_size" title="용지 크기 (페이지 레이아웃일 때)">
+						<option value="letter">Letter</option>
+						<option value="a4">A4</option>
+					</select>
+					<span class="toolbar-label">재생 강조</span>
+					<select id="highlight_mode" title="재생 중 강조 표시 방식">
+						<option value="notes">음표</option>
+						<option value="glow">글로우</option>
+						<option value="bar">마디</option>
+						<option value="column">세로줄</option>
+						<option value="none">끄기</option>
+					</select>
+					<button id="piano_toggle" title="피아노 건반 표시">피아노</button>
+				</div>
+
+				<div class="toolbar-group">
+					<span class="toolbar-label">음표 간격</span>
+					<label title="음표 간격 밀도: 낮을수록 촘촘, 높을수록 넓음">
+						<span>밀도</span>
+						<input type="range" id="density_slider" min="0.5" max="3.0" step="0.05" value="1.5" />
+						<span id="density_label" class="slider-value">1.50</span>
+					</label>
+					<label title="막대-스프링 균형: 0 = 완전 고정, 1 = 기본값, 2 = 완전 탄력">
+						<span>막대/스프링</span>
+						<input type="range" id="rod_spring_slider" min="0.0" max="2.0" step="0.05" value="1.0" />
+						<span id="rod_spring_label" class="slider-value">1.00</span>
+					</label>
+					<label title="음가 비례: 0 = 균일, 1 = 표준, 2 = 음가에 비례">
+						<span>시각/타이밍</span>
+						<input type="range" id="proportionality_slider" min="0.0" max="2.0" step="0.05" value="1.0" />
+						<span id="proportionality_label" class="slider-value">1.00</span>
+					</label>
+				</div>
+			</div>
+
+			<div id="score">
+				<div id="invisible_canvas"></div>
+			</div>
+
+			<div id="footer">
+				브라우저에서 직접 처리 — 파일이 서버로 전송되지 않습니다
+			</div>
+		</div>
+
+		<!-- vendor dependencies -->
+		<script src="vendor/inflate.min.js"></script>
+		<script src="vendor/opentype.min.js"></script>
+
+		<!-- module script -->
+		<script type="module" src="src/main.js"></script>
+		<script>
+			var nextRender
+
+			var scoreElm = document.getElementById('score')
+
+			function updateScroll() {
+				quickDraw(data, -scoreElm.scrollLeft, -scoreElm.scrollTop)
+				nextRender = null
+			}
+
+			scoreElm.addEventListener('scroll', (e) => {
+				if (!nextRender) nextRender = requestAnimationFrame(updateScroll)
+			})
+
+			scoreElm.style.cursor = 'pointer'
+
+			var downx, downy, scrollLeft, scrollTop
+			scoreElm.addEventListener('mousedown', (e) => {
+				downx = e.x
+				downy = e.y
+				scrollLeft = scoreElm.scrollLeft
+				scrollTop = scoreElm.scrollTop
+				window.addEventListener('mousemove', mousedrag)
+				scoreElm.style.cursor = 'grab'
+
+				e.preventDefault()
+
+				window.addEventListener('mouseup', (e) => {
+					window.removeEventListener('mousemove', mousedrag)
+					scoreElm.style.cursor = 'pointer'
+				})
+			})
+
+			function mousedrag(e) {
+				scoreElm.scrollLeft += downx - e.x
+				scoreElm.scrollTop += downy - e.y
+			}
+
+			// ---- Zoom handler (transform-based, no re-layout) ----
+
+			function applyZoom(newLevel) {
+				var oldZoom = getZoomLevel()
+
+				setZoomLevel(newLevel)
+				var zoom = getZoomLevel() // read back clamped value
+
+				// Update slider and label to match the (clamped) value
+				var slider = document.getElementById('zoom_slider')
+				var label  = document.getElementById('zoom_label')
+				if (slider) slider.value = zoom
+				if (label)  label.textContent = Math.round(zoom * 100) + '%'
+
+				// Center-preserving scroll: keep the same score-space point at
+				// the viewport center before and after zoom.
+				var cx = (scoreElm.scrollLeft + scoreElm.clientWidth  / 2) / oldZoom
+				var cy = (scoreElm.scrollTop  + scoreElm.clientHeight / 2) / oldZoom
+
+				// Resize the invisible_canvas spacer so scroll bounds are correct
+				// before we set the new scroll position.
+				var ic = document.getElementById('invisible_canvas')
+				if (ic && typeof maxCanvasWidth !== 'undefined') {
+					ic.style.width  = (maxCanvasWidth  * zoom) + 'px'
+					ic.style.height = Math.max(maxCanvasHeight * zoom, scoreElm.clientHeight) + 'px'
+				}
+
+				scoreElm.scrollLeft = cx * zoom - scoreElm.clientWidth  / 2
+				scoreElm.scrollTop  = cy * zoom - scoreElm.clientHeight / 2
+
+				quickDraw(null, -scoreElm.scrollLeft, -scoreElm.scrollTop)
+			}
+
+			window.applyZoom = applyZoom
+		</script>
+	</body>
+</html>
