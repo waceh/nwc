@@ -19,7 +19,7 @@ function getFontSize() {
 // Layout mode — 'scroll' renders all measures on one infinite horizontal line;
 // 'wrap' breaks measures into systems that fit the available page/canvas width;
 // 'page' renders on fixed-size pages (Letter/A4) like a PDF viewer.
-let layoutMode = 'wrap'
+let layoutMode = 'page'
 
 function setLayoutMode(mode) {
 	if (mode === 'scroll' || mode === 'wrap' || mode === 'page') layoutMode = mode
@@ -185,7 +185,7 @@ function getZoomLevel() {
 // 'single-page': one page at a time, prev/next navigation
 // 'two-up': side-by-side pairs (2 pages per row, like a book spread)
 // 'horizontal': left-to-right horizontal scroll (single row)
-let pageViewMode = 'vertical'
+let pageViewMode = 'two-up'
 const PAGE_VIEW_MODES = ['vertical', 'single-page', 'two-up', 'horizontal']
 
 function setPageViewMode(mode) {

@@ -93,7 +93,7 @@ export class WavetablePianoBackend extends BaseBackend {
     const attack = 0.002;
     const decay = 0.25 * Math.pow(440 / freq, 0.7);
     const sustain = 0.03;
-    const release = 0.1;
+    const release = 0.15;
     const gain = velocity * 0.5;
 
     // Primary oscillator
@@ -106,11 +106,17 @@ export class WavetablePianoBackend extends BaseBackend {
     osc2.setPeriodicWave(wave);
     osc2.frequency.value = freq * 0.9994;
 
-    // Lowpass filter - brighter at higher velocities
+    // Lowpass filter, scaled proportionally to the fundamental so it never
+    // cuts into the note itself — the previous `800 + freq * 0.1` was nearly
+    // flat across the keyboard, so anything above ~A5 (freq > ~890Hz) had its
+    // own fundamental sitting above the cutoff, leaving only a thin sliver of
+    // the tone past the filter's rolloff. A gentler Q (~0.7, Butterworth-ish)
+    // avoids a resonant peak at the cutoff, which reads as a metallic/bell
+    // ring rather than a smooth string tone.
     const filter = ctx.createBiquadFilter();
     filter.type = 'lowpass';
-    filter.frequency.value = 800 + freq * 0.1;
-    filter.Q.value = 1;
+    filter.frequency.value = freq * 4 + 400;
+    filter.Q.value = 0.7;
 
     // Gain envelope
     const noteGain = ctx.createGain();

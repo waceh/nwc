@@ -618,9 +618,12 @@ export class PlaybackHighlighter {
 
 		const scoreElm = this._container
 		const zoom = getZoomLevel()
+		const layoutMode = getLayoutMode()
 
-		if (getLayoutMode() === 'wrap') {
-			// In wrap mode, scroll vertically to keep the active system visible.
+		if (layoutMode === 'wrap' || layoutMode === 'page') {
+			// Wrap and page modes both stack systems/pages vertically — scroll
+			// vertically to keep the active system visible. (Only "scroll" mode
+			// lays the score out horizontally.)
 			const screenY = pos.y * zoom
 			const viewTop = scoreElm.scrollTop
 			const viewHeight = scoreElm.clientHeight
