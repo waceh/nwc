@@ -724,9 +724,9 @@ function toggleParser() {
 const parserBtn = document.getElementById('parser_toggle')
 if (parserBtn) parserBtn.onclick = toggleParser
 
-// Restore persisted parser preference — defaults to 멜로디 (the new,
-// shared lib/nwc2xml parser) unless the user has explicitly switched to
-// 원본 before.
+// Restore persisted parser preference — defaults to 원본 (the legacy
+// src/nwc.js parser) unless the user has explicitly switched to 멜로디
+// before.
 const storedParser = localStorage.getItem(PARSER_STORAGE_KEY)
 if (storedParser !== null) {
 	setUseNewParser(storedParser === 'true')
