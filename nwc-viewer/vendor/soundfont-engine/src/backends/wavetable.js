@@ -63,8 +63,14 @@ export class WavetablePianoBackend extends BaseBackend {
     // Pre-build PeriodicWave variants for different frequency ranges
     this._waves = this._createWavetables(ctx);
 
-    // Ready immediately - no soundfont needed
+    // Ready immediately - no soundfont needed. Other backends flip `ready`
+    // and flush queued commands (see _flushPending()) from loadSoundFont()'s
+    // success path; the wavetable backend never calls loadSoundFont(), so it
+    // has to flush here instead or anything queued before this point (e.g.
+    // setMasterVolume() called right after a soundfont-load failure swaps
+    // the engine onto this backend) would sit in _pending forever.
     this.ready = true;
+    this._flushPending();
   }
 
   async _doLoadSoundFont(_path, _data) {
@@ -154,6 +160,12 @@ export class WavetablePianoBackend extends BaseBackend {
 
   _doProgramChange(_channel, _program) {
     // No-op: only piano timbre available
+  }
+
+  _doSetMasterVolume(value) {
+    // Precise gain control, unlike the base class's CC7-per-channel default
+    // (this backend has no per-channel controlChange support anyway).
+    if (this._masterGain) this._masterGain.gain.value = value;
   }
 
   _doAllNotesOff() {

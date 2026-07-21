@@ -183,6 +183,17 @@ export class SoundFontEngine extends EventEmitter {
   }
 
   /**
+   * Set the overall output volume. 1.0 = unity gain; backends that lack a
+   * direct gain stage (any real synth) approximate this via MIDI CC7 on
+   * every channel, which caps effective volume at 1.0 even if a higher
+   * value is passed.
+   * @param {number} value - 0.0 and up (backend-dependent upper bound)
+   */
+  setMasterVolume(value) {
+    this._backend?.setMasterVolume(value);
+  }
+
+  /**
    * Stop all notes gracefully (with release envelopes).
    * @param {number} [channel] - Specific channel, or all channels if omitted
    */

@@ -551,6 +551,21 @@ if (speedInput) {
 	speedInput.addEventListener('change', () => applySpeed(speedInput.value))
 }
 
+// Volume control
+const volumeSlider = document.getElementById('volume_slider')
+const volumeLabel = document.getElementById('volume_label')
+
+function applyVolume(val) {
+	const n = parseFloat(val)
+	if (!isFinite(n) || n < 0) return
+	playback.setVolume(n)
+	if (volumeLabel) volumeLabel.textContent = Math.round(n * 100) + '%'
+}
+
+if (volumeSlider) {
+	volumeSlider.addEventListener('input', () => applyVolume(volumeSlider.value))
+}
+
 const rerender = () => {
 	try {
 		setup(

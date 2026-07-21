@@ -346,6 +346,7 @@ export class PlaybackController {
 		this._onNoteOn = null
 		this._onNoteOff = null
 		this._speed = 1
+		this._volume = 0.6 // matches the wavetable backend's built-in default gain
 
 		// Solo/mute state per staff
 		// _soloStaves: Set of staff indices with solo enabled (empty = no solo = all play)
@@ -444,6 +445,16 @@ export class PlaybackController {
 	setSpeed(speed) {
 		this._speed = Math.max(0.1, Math.min(4, speed))
 		this._scheduler?.setSpeed(this._speed)
+	}
+
+	/** Current master volume (1.0 = unity gain). */
+	get volume() { return this._volume }
+	set volume(value) { this.setVolume(value) }
+
+	/** Set master volume. Clamped to [0, 1.5] (see SoundFontEngine.setMasterVolume). */
+	setVolume(volume) {
+		this._volume = Math.max(0, Math.min(1.5, volume))
+		this._engine?.setMasterVolume(this._volume)
 	}
 
 	/**
@@ -569,6 +580,10 @@ export class PlaybackController {
 			const program = staves[si].patchName ?? 0
 			this._engine.programChange(ch, program)
 		}
+		// Re-apply in case a soundfont-load failure just swapped the active
+		// backend (each backend instance starts back at its own default gain).
+		this._engine.setMasterVolume(this._volume)
+
 		const filtered = this._filterNotes(notes)
 		this._scheduler.load({ notes: filtered })
 	}

@@ -127,6 +127,22 @@ export class BaseBackend extends EventEmitter {
     this._doControlChange(channel, controller, value);
   }
 
+  /**
+   * Master volume, 0.0-1.5 (1.0 = unity gain). Unlike the other setters,
+   * this is remembered even before the backend is ready so it survives a
+   * soundfont-load failure that swaps to a different backend instance
+   * (SoundFontEngine._setBackend() doesn't carry per-backend state across).
+   */
+  setMasterVolume(value) {
+    this._masterVolume = value;
+    if (!this.ready) {
+      this._pending = this._pending.filter(([method]) => method !== 'setMasterVolume');
+      this._pending.push(['setMasterVolume', [value]]);
+      return;
+    }
+    this._doSetMasterVolume(value);
+  }
+
   pitchBend(channel, value) {
     if (!this.ready) return;
     this._doPitchBend(channel, value);
@@ -207,6 +223,15 @@ export class BaseBackend extends EventEmitter {
   // Optional - defaults are no-ops
   _doControlChange(_channel, _controller, _value) {}
   _doPitchBend(_channel, _value) {}
+
+  // Default master-volume implementation: MIDI CC7 (channel volume) on every
+  // channel, which any GM-compliant synth backend honors via
+  // _doControlChange(). Backends without real per-note synthesis (e.g. a
+  // fixed AudioContext gain chain) should override this directly instead.
+  _doSetMasterVolume(value) {
+    const midiValue = Math.max(0, Math.min(127, Math.round(value * 127)));
+    for (let ch = 0; ch < 16; ch++) this._doControlChange(ch, 7, midiValue);
+  }
 
   _doAllNotesOff(_channel) {
     // Default: send noteOff to all 16 channels isn't feasible without tracking,
