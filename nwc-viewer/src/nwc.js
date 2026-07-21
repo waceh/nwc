@@ -8,11 +8,11 @@ var should_debug = false
 // Toggle to use new parser (lib/nwc2xml, the "멜로디" mode — shares the
 // bug fixes made for the converter, e.g. lyric/title escaping and
 // multi-staff rendering). "원본" (false) is the legacy src/nwc.js parser,
-// kept for comparison but known to mis-render key signatures on some
-// files (Lyric1/Lyric2 verse text used to be dropped too — fixed by
-// routing "LyricN" tokens into staff.lyrics instead of discarding them
-// as stray properties on the tokens array). Defaults to 원본. Can be
-// toggled at runtime via setUseNewParser()
+// kept for comparison. It used to mis-render key signatures (KeySignature
+// was keyed off the Tonic field instead of the Signature accidental list,
+// e.g. rendering a 2-flat key as 5 sharps) and drop Lyric1/Lyric2 verse
+// text entirely — both fixed. Defaults to 원본. Can be toggled at runtime
+// via setUseNewParser()
 let USE_NEW_PARSER = false;
 
 export function getUseNewParser() {
@@ -602,6 +602,24 @@ function getChordPos(str) {
 	return positions
 }
 
+// Major-key label per accidental count (0..7), matching the `sharps`/`flats`
+// lookup tables in interpreter.js's SightReader.KeySignature.
+var FLAT_KEY_BY_COUNT = ['C', 'F', 'Bb', 'Eb', 'Ab', 'Db', 'Gb', 'Cb']
+var SHARP_KEY_BY_COUNT = ['C', 'G', 'D', 'A', 'E', 'B', 'F#', 'C#']
+
+// A NWCTXT Key object's Signature field (e.g. "Bb,Eb") lists the accidentals
+// in the signature — its '#'/'b' counts are what actually determine how many
+// sharps/flats to draw, independent of the key's tonic (which may be a minor
+// key sharing a major key's signature).
+function keyLabelFromSignature(signature) {
+	if (!signature) return 'C'
+	var sharpCount = (signature.match(/#/g) || []).length
+	var flatCount = (signature.match(/b/g) || []).length
+	if (sharpCount) return SHARP_KEY_BY_COUNT[Math.min(sharpCount, 7)]
+	if (flatCount) return FLAT_KEY_BY_COUNT[Math.min(flatCount, 7)]
+	return 'C'
+}
+
 var durs = {
 	Whole: 1,
 	Half: 2,
@@ -690,8 +708,13 @@ function mapTokens(token) {
 		case 'Key':
 			return {
 				type: 'KeySignature',
-				key: token.Tonic,
-				// Signature
+				// interpreter.js's KeySignature() looks `key` up in tables keyed
+				// by major-key label (accidental count + direction), not by
+				// scale tonic — using `Tonic` directly here used to mis-render
+				// signatures whenever the tonic note wasn't itself the major
+				// key's name (e.g. a minor key's tonic), so derive the label
+				// from the actual Signature accidental list instead.
+				key: keyLabelFromSignature(token.Signature),
 			}
 		case 'Tempo':
 			token.duration = token.Tempo // BPM value
