@@ -2700,7 +2700,11 @@ function buildStaffYMap(staves, allowLayering, extents) {
 					break
 				}
 			}
-			gapPixels = hasLyrics ? fs * 5 : fs * 2.8
+			// The lyrics case only needs to beat the dynamic extents-based
+			// contentGap below (which already accounts for actual lyric
+			// height via minPos=-10 in computeStaffExtents) — it's a floor,
+			// not the real budget, so it doesn't need fs*5's full margin.
+			gapPixels = hasLyrics ? fs * 3 : fs * 2.8
 		}
 
 		// Dynamic spacing: if content extents are provided, ensure the gap

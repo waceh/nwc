@@ -12,8 +12,9 @@ import { BaseBackend } from './base.js';
  * quick prototyping without external assets.
  *
  * Limitations:
- * - Piano timbre only (programChange is a no-op)
- * - No MIDI channel separation (all channels play the same piano)
+ * - Piano timbre only (programChange is a no-op) — every channel plays the
+ *   same piano sound, though voices are still tracked per channel so unison
+ *   pitches across channels don't steal each other's note (see _noteKey())
  * - No controlChange or pitchBend support
  */
 export class WavetablePianoBackend extends BaseBackend {
@@ -78,10 +79,16 @@ export class WavetablePianoBackend extends BaseBackend {
     // Silently succeed so engine.loadSoundFont() doesn't throw.
   }
 
-  _doNoteOn(midi, velocity, _channel) {
-    // Stop existing note on same key
-    if (this._activeNotes.has(midi)) {
-      this._doNoteOff(midi);
+  _doNoteOn(midi, velocity, channel) {
+    // Stop an already-sounding instance of this exact pitch on this exact
+    // channel (a same-key re-strike). Keying only by `midi` (as this used
+    // to) meant two different staves/channels hitting the same pitch at the
+    // same time would steal-and-restart each other's voice every time —
+    // audible as a stutter/click on unison chords or doubled octaves that
+    // happen to share a pitch.
+    const key = this._noteKey(midi, channel);
+    if (this._activeNotes.has(key)) {
+      this._doNoteOff(midi, channel);
     }
 
     const ctx = this.audioContext;
@@ -133,11 +140,12 @@ export class WavetablePianoBackend extends BaseBackend {
     osc.start(t);
     osc2.start(t);
 
-    this._activeNotes.set(midi, { osc, osc2, noteGain, filter, release });
+    this._activeNotes.set(key, { osc, osc2, noteGain, filter, release });
   }
 
-  _doNoteOff(midi, _channel) {
-    const note = this._activeNotes.get(midi);
+  _doNoteOff(midi, channel) {
+    const key = this._noteKey(midi, channel);
+    const note = this._activeNotes.get(key);
     if (!note) return;
 
     const ctx = this.audioContext;
@@ -161,7 +169,7 @@ export class WavetablePianoBackend extends BaseBackend {
       } catch (_) { /* already disconnected */ }
     }, (note.release + 0.05) * 1000);
 
-    this._activeNotes.delete(midi);
+    this._activeNotes.delete(key);
   }
 
   _doProgramChange(_channel, _program) {
@@ -174,15 +182,24 @@ export class WavetablePianoBackend extends BaseBackend {
     if (this._masterGain) this._masterGain.gain.value = value;
   }
 
-  _doAllNotesOff() {
-    for (const midi of this._activeNotes.keys()) {
-      this._doNoteOff(midi);
+  // Composite key so the same pitch sounding on two different channels
+  // (e.g. two staves in unison) gets independent voices instead of one
+  // stealing the other's.
+  _noteKey(midi, channel) {
+    return `${channel ?? 0}:${midi}`;
+  }
+
+  _doAllNotesOff(channel) {
+    for (const key of this._activeNotes.keys()) {
+      const [ch, midi] = key.split(':');
+      if (channel !== undefined && +ch !== channel) continue;
+      this._doNoteOff(+midi, +ch);
     }
   }
 
   _doAllSoundOff() {
     // Immediate silence: disconnect all notes without release
-    for (const [midi, note] of this._activeNotes) {
+    for (const [, note] of this._activeNotes) {
       try {
         note.osc.stop();
         note.osc2.stop();
