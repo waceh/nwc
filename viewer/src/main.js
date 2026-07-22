@@ -1046,10 +1046,24 @@ function setFullscreenMode(on) {
 if (fullscreenToggleBtn) fullscreenToggleBtn.onclick = () => setFullscreenMode(true)
 if (fullscreenExitBtn) fullscreenExitBtn.onclick = () => setFullscreenMode(false)
 
+// ---- Menu hide (independent of full view above, same visual effect:
+// hides #top/#footer, floats a restore button over #score) ----
+
+const menuHideToggleBtn = document.getElementById('menu_hide_toggle')
+const menuShowBtn = document.getElementById('menu_show_btn')
+
+function setMenuHidden(on) {
+	document.body.classList.toggle('menu-hidden', on)
+	window.dispatchEvent(new Event('resize'))
+}
+
+if (menuHideToggleBtn) menuHideToggleBtn.onclick = () => setMenuHidden(true)
+if (menuShowBtn) menuShowBtn.onclick = () => setMenuHidden(false)
+
 document.addEventListener('keydown', (e) => {
-	if (e.key === 'Escape' && document.body.classList.contains('fullscreen-mode')) {
-		setFullscreenMode(false)
-	}
+	if (e.key !== 'Escape') return
+	if (document.body.classList.contains('fullscreen-mode')) setFullscreenMode(false)
+	if (document.body.classList.contains('menu-hidden')) setMenuHidden(false)
 })
 
 // ---- Spacing density slider ----

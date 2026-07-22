@@ -68,6 +68,27 @@
 				display: inline-block;
 			}
 
+			/* Menu hide — independent toggle from full view (전체보기) above,
+			   but has the same visual effect (hide #top/#footer, float a
+			   restore button over #score). Kept separate so the two features
+			   don't have to share state or a button. */
+			#menu_show_btn {
+				display: none;
+				position: fixed;
+				top: 8px;
+				left: 8px;
+				z-index: 200;
+			}
+
+			body.menu-hidden #top,
+			body.menu-hidden #footer {
+				display: none;
+			}
+
+			body.menu-hidden #menu_show_btn {
+				display: inline-block;
+			}
+
 			/* Toolbar */
 			.toolbar {
 				display: flex;
@@ -355,9 +376,9 @@
 						</label>
 						<label class="speed-control" title="음량">
 							🔊<input type="range" id="volume_slider"
-								min="0" max="1.5" step="0.01" value="0.6"
+								min="0" max="1.5" step="0.01" value="0.08"
 								style="width: 70px;" />
-							<span id="volume_label" style="min-width: 32px; text-align: center; color: var(--text-dim);">60%</span>
+							<span id="volume_label" style="min-width: 32px; text-align: center; color: var(--text-dim);">8%</span>
 						</label>
 						<select id="solo_staff" title="특정 파트만 재생">
 							<option value="all">전체 파트</option>
@@ -410,6 +431,7 @@
 					<div class="toolbar-group">
 						<button id="advanced_toggle" title="음표 간격 등 고급 설정 보기/숨기기">고급</button>
 						<button id="fullscreen_toggle" title="전체보기 (악보만 표시)">전체보기</button>
+						<button id="menu_hide_toggle" title="메뉴 숨기기">메뉴 숨기기</button>
 					</div>
 				</div>
 			</div>
@@ -459,6 +481,7 @@
 			</div>
 
 			<button id="fullscreen_exit" title="전체보기 종료 (Esc)">축소</button>
+			<button id="menu_show_btn" title="메뉴 보기 (Esc)">메뉴 보기</button>
 
 			<div id="footer">
 				브라우저에서 직접 처리 — 파일이 서버로 전송되지 않습니다 · v1.0.28

@@ -346,7 +346,7 @@ export class PlaybackController {
 		this._onNoteOn = null
 		this._onNoteOff = null
 		this._speed = 1
-		this._volume = 0.6 // matches the wavetable backend's built-in default gain
+		this._volume = 0.08 // oxisynth (default backend) clips well before unity gain with multi-part scores
 
 		// Solo/mute state per staff
 		// _soloStaves: Set of staff indices with solo enabled (empty = no solo = all play)
