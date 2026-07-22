@@ -418,6 +418,20 @@ export class PlaybackController {
 	}
 
 	/**
+	 * The note events currently scheduled for playback (post solo/mute
+	 * filtering) — { time, duration, token, staffIndex, ... }[], sorted by
+	 * time. Used by PlaybackHighlighter to derive exactly which notes are
+	 * sounding at a given moment from the same precise audio clock used for
+	 * the cursor, instead of the scheduler's noteOn/noteOff events (which
+	 * fire up to 50ms ahead of the tempo-correct time — see
+	 * scheduler-worklet.js's lookahead window — and would otherwise make
+	 * highlighted notes/lyrics appear early).
+	 */
+	getFilteredNoteEvents() {
+		return this._filterNotes(this._allNotes)
+	}
+
+	/**
 	 * Re-load the scheduler with filtered notes based on current solo/mute.
 	 * Preserves playback position if currently playing.
 	 */

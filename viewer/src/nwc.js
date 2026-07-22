@@ -573,7 +573,46 @@ function convert275Tokens(reader) {
 			return false
 		})
 		stave.tokens = stave.tokens.map(mapTokens)
+		resolveTies(stave.tokens)
 	})
+}
+
+/**
+ * NWCTXT (v2.75 text format) marks a tie with a trailing "^" on the note's
+ * Pos field — parsed into `token.tied` by getPos() below — but that's a
+ * different field from the `tie`/`tieEnd` booleans that interpreter.js
+ * (skips lyric-syllable assignment on tie continuations) and audio.js
+ * (merges tied-note durations) actually read; those two are only set by
+ * the *binary* NWC decoder's bitflags. Without this, every tied note in a
+ * text-format file was treated as a fresh, separate note: it got its own
+ * re-attack in playback, and — since interpreter.js didn't know to skip
+ * it — consumed a lyric syllable it shouldn't have, pushing every later
+ * syllable in the line onto the wrong (earlier) note.
+ *
+ * Mirrors the binary format's semantics: `tie` = this note ties forward
+ * into the next one, `tieEnd` = this note is the receiving end of a tie
+ * from the previous one. Matches audio.js's findNextTiedInSegment(), which
+ * also just takes "the next Note/Chord" without checking pitch.
+ */
+function resolveTies(tokens) {
+	var pendingTie = false
+	for (var i = 0; i < tokens.length; i++) {
+		var tok = tokens[i]
+		if (tok.type !== 'Note' && tok.type !== 'Chord') continue
+
+		if (pendingTie) {
+			tok.tieEnd = 1
+			pendingTie = false
+		}
+
+		if (tok.type === 'Note' && tok.tied === '^') {
+			tok.tie = 1
+			pendingTie = true
+		} else if (tok.type === 'Chord' && tok.notes && tok.notes.some((n) => n.tied === '^')) {
+			tok.tie = 1
+			pendingTie = true
+		}
+	}
 }
 
 function parseOpts(token) {

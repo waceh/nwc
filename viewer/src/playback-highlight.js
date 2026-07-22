@@ -37,13 +37,20 @@ export class PlaybackHighlighter {
 		this._running = false
 		this._paused = false  // true when paused (highlights stay visible)
 
-		// Active notes: Set of token objects currently sounding
+		// Active notes: Set of token objects currently sounding, derived each
+		// updateTime() call from _noteEvents — not from noteOn/noteOff events
+		// (see setNoteEvents() for why).
 		this._activeTokens = new Set()
 
 		// Time → position index for cursor placement (repeat-aware)
 		this._timeIndex = []       // sorted by time: [{time, x, y}]
 		// Time → position index for click-to-seek (first occurrence only)
 		this._clickIndex = []
+
+		// Note events (time, duration, token) used to derive active
+		// highlights from _currentTime — see setNoteEvents().
+		this._noteEvents = []
+		this._maxNoteDuration = 0
 
 		// Current playback time (updated ~46ms from scheduler)
 		this._currentTime = 0
@@ -220,34 +227,63 @@ export class PlaybackHighlighter {
 		return last.time
 	}
 
-	// ── Event handlers ─────────────────────────────────────────────────────
+	// ── Note events (for active-note highlighting) ──────────────────────────
 
 	/**
-	 * Called when a note starts sounding.
-	 * @param {object} noteEvent - The NoteEvent with .token reference
+	 * Provide the note events currently scheduled for playback — the same
+	 * { time, duration, token, staffIndex, ... } list (post solo/mute
+	 * filtering) that PlaybackController hands to the scheduler. Called
+	 * whenever playback loads or solo/mute selection changes.
+	 *
+	 * Active-note highlighting is derived from this list + _currentTime
+	 * (see updateTime()) rather than from the scheduler's noteOn/noteOff
+	 * events, because those fire up to 50ms ahead of the tempo-correct time
+	 * (scheduler-worklet.js's lookahead window) — driving highlights from
+	 * them made the highlighted note/lyric visibly precede the actual audio.
+	 *
+	 * @param {Array} notes - Sorted by time ascending (as buildNoteEvents produces)
 	 */
-	onNoteOn(noteEvent) {
-		if (noteEvent.token) {
-			this._activeTokens.add(noteEvent.token)
-		}
+	setNoteEvents(notes) {
+		this._noteEvents = notes || []
+		this._maxNoteDuration = this._noteEvents.reduce((mx, n) => Math.max(mx, n.duration || 0), 0)
 	}
 
 	/**
-	 * Called when a note stops sounding.
-	 * @param {object} noteEvent - The NoteEvent with .token reference
+	 * Find every note event sounding at `time` via binary search + a bounded
+	 * backward scan (bounded by the longest note's duration, so it only
+	 * touches notes that could possibly still be active).
 	 */
-	onNoteOff(noteEvent) {
-		if (noteEvent.token) {
-			this._activeTokens.delete(noteEvent.token)
+	_computeActiveTokens(time) {
+		const notes = this._noteEvents
+		const active = new Set()
+		if (notes.length === 0) return active
+
+		let lo = 0, hi = notes.length - 1, idx = -1
+		while (lo <= hi) {
+			const mid = (lo + hi) >> 1
+			if (notes[mid].time <= time) { idx = mid; lo = mid + 1 }
+			else hi = mid - 1
 		}
+		if (idx === -1) return active
+
+		const minStart = time - this._maxNoteDuration
+		for (let i = idx; i >= 0 && notes[i].time >= minStart; i--) {
+			const n = notes[i]
+			if (n.time <= time && time < n.time + n.duration && n.token) {
+				active.add(n.token)
+			}
+		}
+		return active
 	}
 
 	/**
-	 * Update the current playback time (for cursor position).
+	 * Update the current playback time — drives both the cursor position
+	 * and (re-derived every call) the active-note highlight set.
 	 * @param {number} time - Current time in seconds
 	 */
 	updateTime(time) {
 		this._currentTime = time
+		this._activeTokens = this._computeActiveTokens(time)
 	}
 
 	// ── Highlight mode ────────────────────────────────────────────────────
@@ -713,6 +749,7 @@ export class PlaybackHighlighter {
 		this.stop()
 		this._timeIndex = []
 		this._clickIndex = []
+		this._noteEvents = []
 		this._activeTokens.clear()
 	}
 }

@@ -361,12 +361,14 @@ playback.onTime((t, dur) => {
 	highlighter.updateTime(t)
 })
 
+// highlighter no longer listens to these — it derives active-note
+// highlights from updateTime() + setNoteEvents() instead (see
+// playback-highlight.js), since these events fire ahead of the
+// tempo-correct time. Piano key visualization doesn't need that precision.
 playback.onNoteOn((ev) => {
-	highlighter.onNoteOn(ev)
 	pianoKeyboard.noteOn(ev)
 })
 playback.onNoteOff((ev) => {
-	highlighter.onNoteOff(ev)
 	pianoKeyboard.noteOff(ev)
 })
 
@@ -391,6 +393,7 @@ async function togglePlayPause() {
 		// Load current score data before playing
 		const data = scoreManager.getData()
 		await playback.load(data)
+		highlighter.setNoteEvents(playback.getFilteredNoteEvents())
 		await playback.play()
 	}
 }
@@ -509,6 +512,7 @@ if (soloSelect) {
 		}
 		// Re-filter and reload if we have notes loaded
 		await playback._reloadFiltered()
+		highlighter.setNoteEvents(playback.getFilteredNoteEvents())
 	}
 }
 
