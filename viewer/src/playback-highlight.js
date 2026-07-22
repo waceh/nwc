@@ -10,6 +10,7 @@
 
 import { getFontSize, getZoomLevel, getLayoutMode } from './constants.js'
 import { buildTempoMap, ticksToSeconds } from './audio.js'
+import { buildPlaybackSegments } from './playback-order.js'
 
 // ── Highlight colors ───────────────────────────────────────────────────────
 
@@ -39,8 +40,10 @@ export class PlaybackHighlighter {
 		// Active notes: Set of token objects currently sounding
 		this._activeTokens = new Set()
 
-		// Time → position index for cursor placement
+		// Time → position index for cursor placement (repeat-aware)
 		this._timeIndex = []       // sorted by time: [{time, x, y}]
+		// Time → position index for click-to-seek (first occurrence only)
+		this._clickIndex = []
 
 		// Current playback time (updated ~46ms from scheduler)
 		this._currentTime = 0
@@ -64,18 +67,44 @@ export class PlaybackHighlighter {
 	 * Must be called after layout (interpret + score) so that tokens have
 	 * drawingNoteHead with final x/y positions.
 	 *
+	 * Builds two indices:
+	 *  - `_timeIndex`: repeat-aware, walking buildPlaybackSegments() the same
+	 *    way audio.js's buildNoteEvents() does, so the cursor/auto-scroll
+	 *    timeline matches what's actually heard (repeats, D.C./D.S. etc. all
+	 *    add real playback time even though the notation is drawn once).
+	 *    Without this, the cursor drifts ahead of or behind the audio as soon
+	 *    as playback enters a second pass through a repeated section.
+	 *  - `_clickIndex`: a plain first-occurrence index (one entry per token,
+	 *    in score order) used for click-to-seek, where repeat ambiguity
+	 *    doesn't apply — clicking a notehead should seek to its first
+	 *    occurrence regardless of how many times it repeats.
+	 *
 	 * @param {object} data - The score data object (data.score.staves)
 	 */
 	setScore(data) {
 		const staves = data.score?.staves
 		if (!staves || staves.length === 0) {
 			this._timeIndex = []
+			this._clickIndex = []
 			return
 		}
 
 		const tempoMap = buildTempoMap(staves)
-		const index = []
 
+		function resolveHead(tok) {
+			// For Chord tokens, child notes have drawingNoteHead but the
+			// parent may not.  Use the first child's head as fallback.
+			let head = tok.drawingNoteHead
+			if (!head && tok.type === 'Chord' && tok.notes) {
+				for (const n of tok.notes) {
+					if (n.drawingNoteHead) { head = n.drawingNoteHead; break }
+				}
+			}
+			return head
+		}
+
+		// ── Click index: first occurrence only, raw score order ──────────
+		const clickIndex = []
 		for (let si = 0; si < staves.length; si++) {
 			const tokens = staves[si].tokens
 			if (!tokens) continue
@@ -83,24 +112,49 @@ export class PlaybackHighlighter {
 				const tok = tokens[ti]
 				if (tok.type !== 'Note' && tok.type !== 'Chord') continue
 				if (tok.tickValue == null) continue
-
-				// For Chord tokens, child notes have drawingNoteHead but the
-				// parent may not.  Use the first child's head as fallback.
-				let head = tok.drawingNoteHead
-				if (!head && tok.type === 'Chord' && tok.notes) {
-					for (const n of tok.notes) {
-						if (n.drawingNoteHead) { head = n.drawingNoteHead; break }
-					}
-				}
+				const head = resolveHead(tok)
 				if (!head) continue
 
-				const time = ticksToSeconds(tok.tickValue, tempoMap)
-				index.push({
-					time,
+				clickIndex.push({
+					time: ticksToSeconds(tok.tickValue, tempoMap),
 					x: head.x + (head.offsetX || 0),
 					y: head.y + (head.offsetY || 0),
 				})
 			}
+		}
+		clickIndex.sort((a, b) => a.time - b.time || a.x - b.x)
+		this._clickIndex = clickIndex.filter((e, i) => i === 0 || e.time !== clickIndex[i - 1].time)
+
+		// ── Cursor index: repeat-aware, mirrors audio.js buildNoteEvents ──
+		const segments = buildPlaybackSegments(staves)
+		const index = []
+		let playbackOffset = 0
+
+		for (const seg of segments) {
+			const segStartSec = ticksToSeconds(seg.startTick, tempoMap)
+			const segEndSec = ticksToSeconds(seg.endTick, tempoMap)
+
+			for (let si = 0; si < staves.length; si++) {
+				const tokens = staves[si].tokens
+				if (!tokens) continue
+				for (let ti = 0; ti < tokens.length; ti++) {
+					const tok = tokens[ti]
+					if (tok.type !== 'Note' && tok.type !== 'Chord') continue
+					if (tok.tickValue == null) continue
+					if (tok.tickValue < seg.startTick || tok.tickValue >= seg.endTick) continue
+					const head = resolveHead(tok)
+					if (!head) continue
+
+					const noteSec = ticksToSeconds(tok.tickValue, tempoMap)
+					index.push({
+						time: playbackOffset + (noteSec - segStartSec),
+						x: head.x + (head.offsetX || 0),
+						y: head.y + (head.offsetY || 0),
+					})
+				}
+			}
+
+			playbackOffset += segEndSec - segStartSec
 		}
 
 		// Sort by time, then x (for stable cursor interpolation)
@@ -126,7 +180,7 @@ export class PlaybackHighlighter {
 	 * @returns {number|null} Time in seconds, or null if no match
 	 */
 	getTimeAtPosition(scoreX, scoreY) {
-		const idx = this._timeIndex
+		const idx = this._clickIndex
 		if (idx.length === 0) return null
 
 		const fs = getFontSize()
@@ -658,6 +712,7 @@ export class PlaybackHighlighter {
 	dispose() {
 		this.stop()
 		this._timeIndex = []
+		this._clickIndex = []
 		this._activeTokens.clear()
 	}
 }

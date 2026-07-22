@@ -148,6 +148,17 @@ function resizeToFit() {
 	var score = document.getElementById('score')
 	const bb = score.getBoundingClientRect()
 
+	// The canvas is `position: fixed` so it can stay pinned over #score
+	// without taking part in scroll layout (see quickDraw). Fixed-position
+	// elements without explicit top/left fall back to a browser-computed
+	// "static position" that isn't reliably re-derived on every reflow
+	// (e.g. when #top/#footer are toggled to hide the menu) — pin it
+	// explicitly instead so the canvas always tracks #score's box.
+	if (window.canvas) {
+		window.canvas.style.top = bb.top + 'px'
+		window.canvas.style.left = bb.left + 'px'
+	}
+
 	// TODO take min of canvas size vs bb heigh
 	// resize(bb.width, bb.height)
 	resize(score.clientWidth - 20, score.clientHeight - 20)
