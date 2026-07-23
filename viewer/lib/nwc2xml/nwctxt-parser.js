@@ -145,6 +145,13 @@ class NoteTxtObj extends NWCTxtObj {
           const acc = { '#': Accidental.Sharp, 'b': Accidental.Flat, 'n': Accidental.Natural, 'x': Accidental.SharpSharp, 'v': Accidental.FlatFlat };
           this.accidental = acc[m[1]] ?? Accidental.Normal;
         }
+        // A trailing "^" on the Pos field marks a tie starting at this note
+        // (NWCTXT convention — distinct from the "Opts:Tie" flag below, which
+        // this format doesn't actually use). Without this, ties encoded this
+        // way went undetected: the tied continuation note was treated as a
+        // fresh note and wrongly consumed a lyric syllable, drifting every
+        // later syllable in the line onto the wrong (earlier) note.
+        if (pos.endsWith('^')) this.attr |= NoteAttr.TieBeg;
       }
       if (f.startsWith('Opts:')) {
         const opts = fieldValue(f);
@@ -265,8 +272,10 @@ class ChordTxtObj extends NWCTxtObj {
           const m = pos.match(/([#bnxv]?)(-?\d+)/);
           if (m) {
             const acc = { '#': Accidental.Sharp, 'b': Accidental.Flat, 'n': Accidental.Natural, 'x': Accidental.SharpSharp, 'v': Accidental.FlatFlat };
-            // Negate to match binary parser convention (adapter will negate back)
-            positions.push({ pos: -parseInt(m[2]), acc: acc[m[1]] ?? Accidental.Normal });
+            // Negate to match binary parser convention (adapter will negate back).
+            // A trailing "^" on this position marks that particular chord note
+            // as tied forward — see NoteTxtObj.parse() for why this matters.
+            positions.push({ pos: -parseInt(m[2]), acc: acc[m[1]] ?? Accidental.Normal, tie: pos.endsWith('^') });
           }
         }
       }
@@ -289,9 +298,15 @@ class ChordTxtObj extends NWCTxtObj {
       child.pos = positions[i].pos;
       child.accidental = positions[i].acc;
       child.dots = this.dots;
-      child.attr = this.attr;
+      // Each child gets the chord-wide flags (slur/stem/etc.) plus its own
+      // tie status — a chord note's tie is per-note, not shared with siblings.
+      child.attr = positions[i].tie ? (this.attr | NoteAttr.TieBeg) : this.attr;
       this.children.push(child);
     }
+    // Mark the chord itself as tie-starting if any child note ties, so the
+    // top-level tie resolution pass (which only walks staff.objects, not
+    // chord children) can propagate TieEnd onto the next object.
+    if (positions.some((p) => p.tie)) this.attr |= NoteAttr.TieBeg;
   }
   getDuration() { return this.duration; }
   getDurationType() {
@@ -469,6 +484,38 @@ export function parseNWCTxt(text) {
       }
     }
   }
-  
+
+  for (const s of file.staffs) resolveTies(s.objects);
+
   return file;
+}
+
+// A tie's "^" marker (captured as NoteAttr.TieBeg above) only appears on the
+// note where the tie *starts* — NWCTXT never marks the receiving note. Find,
+// for every tie start, the next Note/Chord object and flag it as the tie's
+// end, mirroring src/nwc.js's resolveTies() for the legacy binary-format
+// parser. Without this, a tied-into note reads as a fresh, unconnected note:
+// downstream consumers that skip lyric-syllable assignment and duration
+// merging on tie continuations (interpreter.js, audio.js) never see it as
+// one, so it wrongly consumes a lyric syllable and drifts every later
+// syllable in the line onto the wrong (earlier) note.
+function resolveTies(objects) {
+  let pendingTie = false;
+  for (const obj of objects) {
+    if (obj.type !== ObjType.Note && obj.type !== ObjType.NoteCM) continue;
+
+    if (pendingTie) {
+      if (obj.type === ObjType.NoteCM && obj.children.length > 0) {
+        // The adapter derives the chord token's top-level tie/pitch fields
+        // from the *first* child (see nwc.js's adaptObject case 10), so the
+        // tie-end flag has to land there to be visible.
+        obj.children[0].attr |= NoteAttr.TieEnd;
+      } else {
+        obj.attr |= NoteAttr.TieEnd;
+      }
+      pendingTie = false;
+    }
+
+    if (obj.getAttributes() & NoteAttr.TieBeg) pendingTie = true;
+  }
 }

@@ -386,14 +386,23 @@ playback.onEnd(() => {
 	pianoKeyboard.clear()
 })
 
+// Tracks which score data is currently loaded into the scheduler, so
+// resuming from pause can skip re-loading — load() resets playback
+// position to 0, which was clobbering the paused position on every
+// space-bar resume. Reset to null in setDataAndRender() whenever the
+// score itself changes, so the next play still (re)loads fresh data.
+let _loadedPlaybackData = null
+
 async function togglePlayPause() {
 	if (playback.playing) {
 		playback.pause()
 	} else {
-		// Load current score data before playing
 		const data = scoreManager.getData()
-		await playback.load(data)
-		highlighter.setNoteEvents(playback.getFilteredNoteEvents())
+		if (data !== _loadedPlaybackData) {
+			await playback.load(data)
+			highlighter.setNoteEvents(playback.getFilteredNoteEvents())
+			_loadedPlaybackData = data
+		}
 		await playback.play()
 	}
 }
@@ -619,6 +628,9 @@ function setDataAndRender(_data) {
 	scoreManager.setData(_data)
 	updateSoloStaffOptions(_data)
 	rerender()
+	// New score — force the next play to (re)load it instead of resuming
+	// stale scheduler state from whatever was loaded before.
+	_loadedPlaybackData = null
 }
 
 function processData(payload, filename) {
@@ -1031,6 +1043,12 @@ if (advancedToggle && advancedPanel) {
 	advancedToggle.onclick = () => {
 		const isOpen = advancedPanel.classList.toggle('open')
 		advancedToggle.classList.toggle('active', isOpen)
+		// The panel's open/close changes #top's height, so the score canvas
+		// (sized/positioned off the last known layout) needs to recompute —
+		// same reasoning as setFullscreenMode/setMenuSimple below. Without
+		// this the canvas kept its old top offset and visually covered the
+		// panel instead of shifting down to reveal it.
+		window.dispatchEvent(new Event('resize'))
 	}
 }
 
