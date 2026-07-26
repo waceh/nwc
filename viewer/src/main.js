@@ -724,6 +724,8 @@ function updateLayoutUI() {
 	const isPage = mode === 'page'
 	if (orientGroup) orientGroup.style.display = isPage ? 'inline-flex' : 'none'
 	if (pageViewModeEl) pageViewModeEl.style.display = isPage ? 'inline' : 'none'
+	const exportPdfBtn = document.getElementById('export_pdf')
+	if (exportPdfBtn) exportPdfBtn.style.display = isPage ? 'inline' : 'none'
 	updatePageNavVisibility()
 
 	// Toggle background for page mode (gray canvas background)
@@ -847,6 +849,75 @@ if (pageInput) {
 	// Prevent scroll-wheel from changing the number input (confusing UX)
 	pageInput.addEventListener('wheel', (e) => e.preventDefault(), { passive: false })
 }
+
+// ---------------------------------------------------------------------------
+// PDF export (page layout mode only)
+// ---------------------------------------------------------------------------
+
+// Renders each page directly from the recorded draw commands (window.drawing)
+// onto its own offscreen canvas, bypassing quickDraw's viewport culling (which
+// reads #score's live scroll position and would otherwise skip every page not
+// currently on screen). See Drawing.draw()'s `window.__pdfExportViewport` check.
+async function exportPdf() {
+	const pg = window._pageGeometry
+	if (getLayoutMode() !== 'page' || !pg || !pg.pagePositions?.length || !window.drawing) {
+		alert('PDF로 저장하려면 레이아웃을 "페이지" 모드로 전환한 뒤 다시 시도해주세요.')
+		return
+	}
+
+	const btn = document.getElementById('export_pdf')
+	const originalLabel = btn?.textContent
+	if (btn) {
+		btn.disabled = true
+		btn.textContent = '내보내는 중…'
+	}
+
+	try {
+		const { jsPDF } = window.jspdf
+		const pxToMm = 25.4 / 96
+		const widthMm = pg.pageWidth * pxToMm
+		const heightMm = pg.pageHeight * pxToMm
+		const orientation = getPageOrientation() === 'landscape' ? 'landscape' : 'portrait'
+		const pdf = new jsPDF({ orientation, unit: 'mm', format: [widthMm, heightMm], compress: true })
+
+		const scale = 2  // render at 2x page resolution for crisp text/lines
+		for (let i = 0; i < pg.pageCount; i++) {
+			const pos = pg.pagePositions[i]
+			const off = document.createElement('canvas')
+			off.width = Math.round(pg.pageWidth * scale)
+			off.height = Math.round(pg.pageHeight * scale)
+			const octx = off.getContext('2d')
+			octx.scale(scale, scale)
+			octx.fillStyle = '#ffffff'
+			octx.fillRect(0, 0, pg.pageWidth, pg.pageHeight)
+			octx.save()
+			octx.translate(-pos.x, -pos.y)
+			window.__pdfExportViewport = { left: pos.x, top: pos.y, width: pg.pageWidth, height: pg.pageHeight }
+			window.drawing.draw(octx)
+			window.__pdfExportViewport = null
+			octx.restore()
+
+			if (i > 0) pdf.addPage([widthMm, heightMm], orientation)
+			pdf.addImage(off.toDataURL('image/png'), 'PNG', 0, 0, widthMm, heightMm)
+		}
+
+		const base = (window.__currentFile || 'score').replace(/\.[^./]+$/, '')
+		pdf.save(`${base}.pdf`)
+	} catch (error) {
+		console.error('PDF export failed:', error)
+		alert(`PDF로 내보내는 중 오류가 발생했습니다: ${error.message}`)
+	} finally {
+		window.__pdfExportViewport = null
+		if (btn) {
+			btn.disabled = false
+			btn.textContent = originalLabel
+		}
+	}
+}
+window.exportPdf = exportPdf
+
+const exportPdfBtn = document.getElementById('export_pdf')
+if (exportPdfBtn) exportPdfBtn.onclick = exportPdf
 
 // Track current page from scroll position in all page view modes
 ;(function initPageScrollTracking() {

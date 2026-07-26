@@ -1290,12 +1290,24 @@ class Drawing {
 		// Convert screen-space viewport bounds to score-space for culling.
 		// quickDraw() applies ctx.scale(zoom) so drawing coordinates are in
 		// score-space, but scrollLeft/clientWidth are in screen pixels.
-		const zoom = getZoomLevel()
-		const _scoreElm = document.getElementById('score')
-		const viewportWidth = (_scoreElm?.clientWidth || 800) / zoom
-		const viewportOffsetX = (_scoreElm?.scrollLeft || 0) / zoom
-		const viewportHeight = (_scoreElm?.clientHeight || 600) / zoom
-		const viewportOffsetY = (_scoreElm?.scrollTop || 0) / zoom
+		// PDF export renders pages onto an offscreen canvas that isn't tied
+		// to #score's real scroll position, so it supplies an explicit
+		// score-space viewport override instead.
+		const override = window.__pdfExportViewport
+		let viewportWidth, viewportOffsetX, viewportHeight, viewportOffsetY
+		if (override) {
+			viewportWidth = override.width
+			viewportOffsetX = override.left
+			viewportHeight = override.height
+			viewportOffsetY = override.top
+		} else {
+			const zoom = getZoomLevel()
+			const _scoreElm = document.getElementById('score')
+			viewportWidth = (_scoreElm?.clientWidth || 800) / zoom
+			viewportOffsetX = (_scoreElm?.scrollLeft || 0) / zoom
+			viewportHeight = (_scoreElm?.clientHeight || 600) / zoom
+			viewportOffsetY = (_scoreElm?.scrollTop || 0) / zoom
+		}
 
 		// Restore default font/baseline — canvas resets wipe context state
 		// (e.g. after resizeToFit()), so re-apply on every draw pass.
