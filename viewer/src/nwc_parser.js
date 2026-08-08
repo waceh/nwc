@@ -111,9 +111,11 @@ function parseKeySignature(reader) {
 	var sharpKeys = ['C', 'G', 'D', 'A', 'E', 'B', 'F#', 'C#']
 
 	if (flats.length) {
-		reader.set('key', flatKeys[flats.length])
+		var idx = Math.min(flats.length, flatKeys.length - 1)
+		reader.set('key', flatKeys[idx] ?? 'C')
 	} else if (sharps.length) {
-		reader.set('key', sharpKeys[sharps.length])
+		var idx = Math.min(sharps.length, sharpKeys.length - 1)
+		reader.set('key', sharpKeys[idx] ?? 'C')
 	} else {
 		reader.set('key', 'C')
 	}

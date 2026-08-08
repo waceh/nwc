@@ -217,15 +217,15 @@
 </head>
 <body>
 
-  <h1>NWC Converter</h1>
-  <p class="subtitle">NoteWorthy Composer 파일을 MusicXML 또는 MIDI로 변환합니다</p>
+  <h1>NWC & MusicXML Converter</h1>
+  <p class="subtitle">NoteWorthy Composer 및 MusicXML 파일을 MusicXML 또는 MIDI로 변환합니다</p>
 
   <div class="drop-zone" id="drop-zone">
     <span class="drop-zone-icon">🎵</span>
-    <p><strong>.nwc 파일을 여기에 드롭하세요</strong></p>
+    <p><strong>.nwc 또는 .musicxml (.mxl) 파일을 여기에 드롭하세요</strong></p>
     <p>또는</p>
     <label class="btn-select" for="file-input">파일 선택</label>
-    <input type="file" id="file-input">
+    <input type="file" id="file-input" accept=".nwc,.nwz,.nwctxt,.musicxml,.mxl,.xml">
   </div>
 
   <div class="loading" id="loading">
@@ -253,6 +253,7 @@
 
   <script type="module">
     import { convertNWCToMusicXML, parseNWC } from '../viewer/lib/nwc2xml/index.js';
+    import { unzip } from '../viewer/src/zip.js';
 
     // ── MIDI writer ─────────────────────────────────────────────────────────
 
@@ -432,6 +433,7 @@
         }));
       } catch (err) {
         console.error('뷰어로 파일을 전달하지 못했습니다:', err);
+        showError('파일 용량이 커서 뷰어로 직접 자동 전달하지 못했습니다. 다운로드한 파일을 뷰어 화면에서 직접 열어주세요.');
       }
     });
 
@@ -451,20 +453,84 @@
     });
     fileInput.addEventListener('change', () => { if (fileInput.files[0]) handleFile(fileInput.files[0]); });
 
+    async function extractMXL(buffer) {
+      const files = await unzip(buffer);
+      const containerData = files.get('META-INF/container.xml');
+      if (containerData) {
+        const containerXml = new TextDecoder().decode(containerData);
+        const parser = new DOMParser();
+        const containerDoc = parser.parseFromString(containerXml, 'text/xml');
+        const rootfileEls = containerDoc.getElementsByTagName('rootfile');
+        for (let i = 0; i < rootfileEls.length; i++) {
+          const fullPath = rootfileEls[i].getAttribute('full-path');
+          if (fullPath && files.has(fullPath)) {
+            return new TextDecoder().decode(files.get(fullPath));
+          }
+        }
+      }
+      for (const [fname, data] of files.entries()) {
+        if (fname.endsWith('.xml') || fname.endsWith('.musicxml')) {
+          return new TextDecoder().decode(data);
+        }
+      }
+      throw new Error('MXL 압축 파일 내에서 MusicXML 데이터를 찾을 수 없습니다.');
+    }
+
     function handleFile(file) {
-      if (!file.name.toLowerCase().endsWith('.nwc')) { showError('.nwc 파일만 지원합니다.'); return; }
+      const lower = file.name.toLowerCase();
+      const isNwc = lower.endsWith('.nwc') || lower.endsWith('.nwz') || lower.endsWith('.nwctxt');
+      const isXml = lower.endsWith('.musicxml') || lower.endsWith('.mxl') || lower.endsWith('.xml');
+
+      if (!isNwc && !isXml) {
+        showError('.nwc 또는 MusicXML (.musicxml, .mxl, .xml) 파일만 지원합니다.');
+        return;
+      }
       reset();
       loading.classList.add('visible');
 
       const reader = new FileReader();
-      reader.onload = e => {
+      reader.onload = async e => {
         try {
           const buffer = e.target.result;
-          const xml    = convertNWCToMusicXML(buffer);
-          const nwc    = parseNWC(buffer);
-          const midi   = musicXMLtoMidi(xml);
           currentBuffer = buffer;
-          showResult(file.name, xml, midi, nwc);
+
+          let xml = '';
+          let midi = null;
+          let title = '';
+          let staffCount = '?';
+
+          if (isXml) {
+            const bytes = new Uint8Array(buffer);
+            if (bytes[0] === 0x50 && bytes[1] === 0x4B) {
+              xml = await extractMXL(buffer);
+            } else {
+              xml = new TextDecoder().decode(buffer);
+            }
+
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(xml, 'text/xml');
+            const errEl = doc.querySelector ? doc.querySelector('parsererror') : doc.getElementsByTagName('parsererror')[0];
+            if (errEl) {
+              throw new Error('올바른 MusicXML 파일이 아닙니다.');
+            }
+
+            midi = musicXMLtoMidi(xml);
+
+            const workTitle = doc.querySelector('work work-title')?.textContent?.trim();
+            const movTitle  = doc.querySelector('movement-title')?.textContent?.trim();
+            const creditTxt = doc.querySelector('credit credit-words')?.textContent?.trim();
+            title = workTitle || movTitle || creditTxt || file.name.replace(/\.(musicxml|mxl|xml)$/i, '');
+            staffCount = doc.querySelectorAll('score-part').length || '?';
+
+          } else {
+            xml  = convertNWCToMusicXML(buffer);
+            midi = musicXMLtoMidi(xml);
+            const nwc = parseNWC(buffer);
+            title = nwc?.title || '(없음)';
+            staffCount = nwc?.staffs?.length ?? '?';
+          }
+
+          showResult(file.name, xml, midi, { title, staffCount });
         } catch (err) {
           showError('변환 실패: ' + err.message);
         } finally {
@@ -475,24 +541,24 @@
       reader.readAsArrayBuffer(file);
     }
 
-    function showResult(filename, xml, midi, nwc) {
+    function showResult(filename, xml, midi, infoObj) {
       revokeAll();
 
       currentFilename = filename;
 
-      const base = filename.replace(/\.nwc$/i, '');
+      const base = filename.replace(/\.(nwc|nwz|nwctxt|musicxml|mxl|xml)$/i, '');
       dlXml.href     = mkBlob(xml,  'application/xml');
       dlXml.download = base + '.musicxml';
       dlMidi.href     = mkBlob(midi, 'audio/midi');
       dlMidi.download = base + '.mid';
 
-      const staffCount   = nwc?.staffs?.length ?? '?';
+      const staffCount   = infoObj?.staffCount ?? '?';
       const measureCount = (xml.match(/<measure/g) || []).length;
       const noteCount    = (xml.match(/<note>/g)   || []).length;
 
       fileInfo.innerHTML = `
         <span class="label">원본 파일</span> <span class="value">${filename}</span>
-        <span class="label">제목</span>       <span class="value">${nwc?.title || '(없음)'}</span>
+        <span class="label">제목</span>       <span class="value">${infoObj?.title || '(없음)'}</span>
         <span class="label">파트</span>       <span class="value">${staffCount}개</span>
         <span class="label">마디</span>       <span class="value">${measureCount}개</span>
         <span class="label">음표</span>       <span class="value">${noteCount}개</span>

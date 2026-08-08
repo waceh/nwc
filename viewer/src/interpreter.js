@@ -78,7 +78,9 @@ function interpret(dataOrContext) {
 if (typeof window !== 'undefined') {
 window.utils = window.utils || {}
 window.utils.getScoreBar = function (n) {
-	var tokens = data.score.staves[0].tokens
+	var scoreData = (typeof window !== 'undefined' && window.data) ? window.data : null
+	if (!scoreData?.score?.staves?.[0]?.tokens) return undefined
+	var tokens = scoreData.score.staves[0].tokens
 	var bar = 1
 
 	var index
@@ -99,8 +101,9 @@ window.utils.getScoreBar = function (n) {
 }
 
 window.utils.whichBar = function (find) {
-	// tokens.indexOf(tokens.filter(x => x.tie)[0])
-	var tokens = data.score.staves[0].tokens
+	var scoreData = (typeof window !== 'undefined' && window.data) ? window.data : null
+	if (!scoreData?.score?.staves?.[0]?.tokens) return 1
+	var tokens = scoreData.score.staves[0].tokens
 
 	var bar = 1
 	tokens.some((token, i) => {
@@ -124,16 +127,15 @@ function SightReader() {
 	this.tabCounter = new Fraction(0, 1) // commutativeTabDuration
 	this.tmpFraction = new Fraction(0, 1)
 	this.timeSigVal = new Fraction(4, 4)
+	this.lyricsToken = null
 	this.reset()
 }
-
-var lyricsToken
 
 SightReader.prototype.read = function (staves) {
 	staves.forEach((staff) => {
 		this.reset()
 
-		lyricsToken = null
+		this.lyricsToken = null
 		var lyrics = staff.lyrics
 		if (lyrics && lyrics.length) {
 			var firstLine = lyrics[0]
@@ -147,26 +149,26 @@ SightReader.prototype.read = function (staves) {
 				// renderer can detect continuations and draw inter-note dashes.
 				// A leading '-' becomes a trailing '-' on the previous syllable
 				// (equivalent to the tokenizer's 'Glo-' format).
-				lyricsToken = []
+				this.lyricsToken = []
 				for (var li = 0; li < firstLine.length; li++) {
 					var raw = firstLine[li]
 					var trimmed = raw.replace(/^[\s\r]+/, '')
 					if (trimmed.startsWith('-')) {
 						// Continuation syllable: mark previous token with trailing hyphen
 						// and strip the leading hyphen from this syllable.
-						if (lyricsToken.length > 0) {
-							var prev = lyricsToken[lyricsToken.length - 1]
+						if (this.lyricsToken.length > 0) {
+							var prev = this.lyricsToken[this.lyricsToken.length - 1]
 							if (!prev.endsWith('-')) {
-								lyricsToken[lyricsToken.length - 1] = prev + '-'
+								this.lyricsToken[this.lyricsToken.length - 1] = prev + '-'
 							}
 						}
 						trimmed = trimmed.slice(1)
 					}
-					lyricsToken.push(trimmed)
+					this.lyricsToken.push(trimmed)
 				}
 			} else {
 				// Old parser: raw string that needs tokenizing
-				lyricsToken = tokenizeLyrics(firstLine)
+				this.lyricsToken = tokenizeLyrics(firstLine)
 			}
 		}
 		staff.tokens.forEach((token) => {
@@ -381,7 +383,7 @@ SightReader.prototype.Chord = function (token) {
 	// Chords get a syllable unless they contain tied notes from previous notes.
 	// A chord with both rest+note is considered audible and gets a syllable.
 	// lyricSyllable overrides: Always(1) forces, Never(2) skips.
-	if (lyricsToken && lyricsToken.length) {
+	if (this.lyricsToken && this.lyricsToken.length) {
 		var isSlurBeneficiary = token.slur === 2 || token.slur === 3
 		var isTieBeneficiary = !!token.tieEnd
 
@@ -403,7 +405,7 @@ SightReader.prototype.Chord = function (token) {
 		if (shouldAssign) {
 			// Exactly one shift() per note — see the Note handler below for
 			// why this must not keep skipping past multiple markers.
-			var syllable = lyricsToken.shift()
+			var syllable = this.lyricsToken.shift()
 			if (syllable && !/^[-_]$/.test(syllable)) {
 				token.text = syllable
 			}
@@ -496,7 +498,7 @@ SightReader.prototype.Note = function (token) {
 	// - Rests are ignored (handled in Rest handler, not here).
 	// - Slur start (1) and tie start get a syllable normally.
 	// - lyricSyllable: 0=Default (use rules above), 1=Always, 2=Never
-	if (lyricsToken && lyricsToken.length) {
+	if (this.lyricsToken && this.lyricsToken.length) {
 		var isSlurBeneficiary = token.slur === 2 || token.slur === 3
 		var isTieBeneficiary = !!token.tieEnd
 
@@ -517,7 +519,7 @@ SightReader.prototype.Note = function (token) {
 			// text, not "skip ahead to the next real syllable". Consuming
 			// more than one token here would pull every later syllable in
 			// the line onto earlier notes than they belong on.
-			var syllable = lyricsToken.shift()
+			var syllable = this.lyricsToken.shift()
 			if (syllable && !/^[-_]$/.test(syllable)) {
 				token.text = syllable
 			}

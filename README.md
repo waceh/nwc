@@ -7,7 +7,7 @@ NoteWorthy Composer(`.nwc`) 파일을 브라우저에서 바로 열어보고, **
 ## 기능
 
 ### 변환기
-- `.nwc` 파일 드래그 & 드롭 또는 파일 선택
+- `.nwc`, `.musicxml`, `.mxl` 파일 드래그 & 드롭 또는 파일 선택
 - **MusicXML** 변환 — Logic Pro, Sibelius, Finale 등에서 임포트 가능 (가사 포함)
 - **MIDI** 변환 — 모든 DAW에서 사용 가능 (가사 미지원)
 

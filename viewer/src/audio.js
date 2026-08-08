@@ -558,16 +558,25 @@ export class PlaybackController {
 	}
 
 	async _loadSoundfont() {
-		if (this._soundfontLoaded) return
-		try {
-			console.log('[audio] Loading soundfont:', SOUNDFONT_PATH)
-			await this._engine.loadSoundFont(SOUNDFONT_PATH)
-			this._soundfontLoaded = true
-			console.log('[audio] Soundfont loaded successfully')
-		} catch (err) {
-			console.warn('[audio] Failed to load soundfont, falling back to wavetable:', err)
-			this._engine.setBackend('wavetable')
-		}
+		if (this._soundfontLoaded || this._soundfontAttempted) return
+		if (this._soundfontPromise) return this._soundfontPromise
+
+		this._soundfontPromise = (async () => {
+			try {
+				console.log('[audio] Loading soundfont:', SOUNDFONT_PATH)
+				await this._engine.loadSoundFont(SOUNDFONT_PATH)
+				this._soundfontLoaded = true
+				console.log('[audio] Soundfont loaded successfully')
+			} catch (err) {
+				console.warn('[audio] Failed to load soundfont, falling back to wavetable:', err)
+				this._engine.setBackend('wavetable')
+			} finally {
+				this._soundfontAttempted = true
+				this._soundfontPromise = null
+			}
+		})()
+
+		return this._soundfontPromise
 	}
 
 	/**
@@ -576,8 +585,8 @@ export class PlaybackController {
 	 */
 	async load(data) {
 		await this._ensureInit()
-		// Wait for soundfont if it hasn't loaded yet
-		if (!this._soundfontLoaded) {
+		// Wait for soundfont if it hasn't been attempted yet
+		if (!this._soundfontLoaded && !this._soundfontAttempted) {
 			await this._loadSoundfont()
 		}
 		// Ensure tokens have been interpreted (name, octave, tickValue, etc.)
