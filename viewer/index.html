@@ -10,7 +10,7 @@
 			@font-face { font-family: 'BravuraText'; src: url('vendor/bravura-1.211/otf/BravuraText.otf') format('opentype'); }
 		</style>
 	</head>
-	<body>
+	<body class="menu-simple">
 		<style>
 			/* Palette matched to the converter page (../converter/index.html) so the two
 			   feel like one product rather than two different apps. */
@@ -339,12 +339,21 @@
 				display: inline-block;
 			}
 
-			.time-display {
-				font-size: 11px;
-				min-width: 85px;
-				text-align: center;
-				font-variant-numeric: tabular-nums;
-				color: var(--text-dim);
+			#menu_simple_toggle,
+			#menu_full_toggle {
+				background: #4f46e5 !important;
+				color: #ffffff !important;
+				font-weight: 600 !important;
+				border: 1px solid #6366f1 !important;
+				border-radius: 4px !important;
+				padding: 3px 10px !important;
+				box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+			}
+
+			#menu_simple_toggle:hover,
+			#menu_full_toggle:hover {
+				background: #4338ca !important;
+				border-color: #4f46e5 !important;
 			}
 		</style>
 
@@ -354,14 +363,12 @@
 					<!-- File -->
 					<div class="toolbar-group menu-extra">
 						<a href="../converter/index.html" id="logo">NWC Viewer</a>
-						<button id="open">Open</button>
-						<input type="file" id="opener" hidden />
-						<a href="../converter/index.html"><button title="NWC를 MusicXML/MIDI로 변환">Convert</button></a>
 					</div>
 
 					<!-- Playback -->
 					<div class="toolbar-group">
-						<button id="menu_full_toggle" class="menu-simple-only" title="전체 메뉴 보기">메뉴 보기</button>
+						<button id="open" title="악보 파일 열기">Open</button>
+						<input type="file" id="opener" hidden />
 						<button id="play" title="재생 / 일시정지">재생</button>
 						<button id="stop" title="정지">정지</button>
 						<span id="playback_time" class="time-display menu-extra">0:00 / 0:00</span>
@@ -386,7 +393,16 @@
 						<select id="solo_staff" class="menu-extra" title="특정 파트만 재생">
 							<option value="all">전체 파트</option>
 						</select>
+						<!-- Octave Control Buttons -->
+						<div class="octave-control-group" title="재생 옥타브 조절 (음 높이 변경)" style="display: inline-flex; align-items: center; background: rgba(125,125,125,0.15); border: 1px solid var(--border-color, #ccc); border-radius: 4px; padding: 1px 4px; gap: 4px;">
+							<span style="font-size: 11px; font-weight: 600; color: var(--text-dim);">옥타브</span>
+							<button id="octave_down" style="padding: 1px 6px; font-size: 11px; font-weight: bold; border-radius: 3px; cursor: pointer;" title="-1 옥타브 낮춤">▼</button>
+							<span id="octave_display" style="font-size: 11px; font-weight: 700; min-width: 20px; text-align: center; color: var(--accent-color, #2563eb);">0</span>
+							<button id="octave_up" style="padding: 1px 6px; font-size: 11px; font-weight: bold; border-radius: 3px; cursor: pointer;" title="+1 옥타브 높임">▲</button>
+						</div>
 						<button id="autoscroll_toggle" class="active menu-extra" title="재생 중 자동 스크롤">자동 스크롤</button>
+						<!-- 메뉴 보기 버튼 (맨 우측에 배치) -->
+						<button id="menu_full_toggle" class="menu-simple-only" title="전체 메뉴 보기">메뉴 보기</button>
 					</div>
 				</div>
 
@@ -416,6 +432,7 @@
 							<span id="page_indicator" style="font-size: 11px; color: var(--text-dim);"> / 1</span>
 							<button id="page_next" title="다음 페이지" style="font-size: 11px; padding: 2px 6px;">&gt;</button>
 						</span>
+						<a href="../converter/index.html" style="text-decoration: none;"><button id="convert_btn" title="NWC를 MusicXML/MIDI로 변환">Convert</button></a>
 						<button id="export_pdf" style="display: none;" title="현재 악보를 PDF 파일로 저장">PDF로 저장</button>
 					</div>
 
@@ -431,52 +448,11 @@
 						<button id="fit_height_btn" title="화면 높이에 맞추기" style="font-size: 11px; padding: 2px 6px;">H</button>
 					</div>
 
-					<!-- Advanced panel toggle -->
+					<!-- Full View & Menu Simplify Toggles -->
 					<div class="toolbar-group">
-						<button id="advanced_toggle" title="음표 간격 등 고급 설정 보기/숨기기">고급</button>
 						<button id="fullscreen_toggle" title="전체보기 (악보만 표시)">전체보기</button>
-						<button id="menu_simple_toggle" title="메뉴 간략히 (재생/정지/음량만 표시)">메뉴 간략히</button>
+						<button id="menu_simple_toggle" title="메뉴 간략히 (주요 컨트롤만 표시)">메뉴 간략히</button>
 					</div>
-				</div>
-			</div>
-
-			<!-- Advanced panel — hidden by default, toggled by the 고급 button above.
-			     Bundles the less-frequently-used controls (font, ink effect,
-			     spacing tuning, and localhost-only debug tools) out of the main
-			     toolbar so it stays short on small/tablet screens. -->
-			<div id="advanced_panel">
-				<div class="toolbar-group">
-					<span class="toolbar-label">크기</span>
-					<button id="size_down" title="보표 크기 줄이기">-</button>
-					<button id="size_up" title="보표 크기 키우기">+</button>
-					<span class="toolbar-label">재생 강조</span>
-					<select id="highlight_mode" title="재생 중 강조 표시 방식">
-						<option value="notes">음표</option>
-						<option value="glow">글로우</option>
-						<option value="bar">마디</option>
-						<option value="column">세로줄</option>
-						<option value="none">끄기</option>
-					</select>
-					<button id="piano_toggle" title="피아노 건반 표시">피아노</button>
-				</div>
-
-				<div class="toolbar-group">
-					<span class="toolbar-label">음표 간격</span>
-					<label title="음표 간격 밀도: 낮을수록 촘촘, 높을수록 넓음">
-						<span>밀도</span>
-						<input type="range" id="density_slider" min="0.5" max="3.0" step="0.05" value="1.5" />
-						<span id="density_label" class="slider-value">1.50</span>
-					</label>
-					<label title="막대-스프링 균형: 0 = 완전 고정, 1 = 기본값, 2 = 완전 탄력">
-						<span>막대/스프링</span>
-						<input type="range" id="rod_spring_slider" min="0.0" max="2.0" step="0.05" value="1.0" />
-						<span id="rod_spring_label" class="slider-value">1.00</span>
-					</label>
-					<label title="음가 비례: 0 = 균일, 1 = 표준, 2 = 음가에 비례">
-						<span>시각/타이밍</span>
-						<input type="range" id="proportionality_slider" min="0.0" max="2.0" step="0.05" value="1.0" />
-						<span id="proportionality_label" class="slider-value">1.00</span>
-					</label>
 				</div>
 			</div>
 

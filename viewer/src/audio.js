@@ -81,9 +81,10 @@ function assignChannels(staves) {
  * @param {object} data - The interpreted score data (data.score.staves[].tokens)
  * @returns {{ notes: NoteEvent[], duration: number, channels: number[], segments: Array }}
  */
-export function buildNoteEvents(data) {
+export function buildNoteEvents(data, octaveShift = 0) {
 	const staves = data.score.staves
 	const notes = []
+	const octaveDelta = (octaveShift || 0) * 12
 
 	// Resolve tempo: default 120 BPM quarter note. Walk stave 0 for the first
 	// Tempo token; if there are mid-score tempo changes we'll track them.
@@ -107,7 +108,7 @@ export function buildNoteEvents(data) {
 		for (let si = 0; si < staves.length; si++) {
 			const tokens = staves[si].tokens
 			const channel = channels[si]
-			const transpose = staves[si].transposition || 0
+			const transpose = (staves[si].transposition || 0) + (channel === 9 ? 0 : octaveDelta)
 
 			// Find the running velocity at the start of this segment by scanning
 			// all Dynamic tokens before the segment start tick
@@ -171,7 +172,8 @@ export function buildNoteEvents(data) {
 
 				if (tok.type === 'Note') {
 					if (tok.name == null) continue
-					const midi = toMidi(tok.name, tok.octave, tok.accidentalValue) + transpose
+					const rawMidi = toMidi(tok.name, tok.octave, tok.accidentalValue) + transpose
+					const midi = Math.max(0, Math.min(127, rawMidi))
 					notes.push({
 						midi,
 						time: startSec,
@@ -190,7 +192,8 @@ export function buildNoteEvents(data) {
 					for (const n of tok.notes) {
 						if (n.name == null) continue
 						if (n.tieEnd && !tok.tie) continue  // only skip tieEnd if not part of a new tie chain
-						const midi = toMidi(n.name, n.octave, n.accidentalValue) + transpose
+						const rawMidi = toMidi(n.name, n.octave, n.accidentalValue) + transpose
+						const midi = Math.max(0, Math.min(127, rawMidi))
 						notes.push({
 							midi,
 							time: startSec,
@@ -411,9 +414,16 @@ export class PlaybackController {
 	 */
 	_filterNotes(notes) {
 		const hasSolo = this._soloStaves.size > 0
-		return notes.filter(n => {
+		const octaveDelta = (this._octaveShift || 0) * 12
+		const filtered = notes.filter(n => {
 			if (hasSolo) return this._soloStaves.has(n.staffIndex)
 			return !this._muteStaves.has(n.staffIndex)
+		})
+		if (!octaveDelta) return filtered
+		return filtered.map(n => {
+			if (n.channel === 9) return n
+			const midi = Math.max(0, Math.min(127, n.midi + octaveDelta))
+			return { ...n, midi }
 		})
 	}
 
@@ -436,7 +446,7 @@ export class PlaybackController {
 	 * Preserves playback position if currently playing.
 	 */
 	async _reloadFiltered() {
-		if (!this._scheduler || this._allNotes.length === 0) return
+		if (!this._scheduler || !this._allNotes || this._allNotes.length === 0) return
 		const wasPlaying = this.playing
 		const pos = this.currentTime
 		const filtered = this._filterNotes(this._allNotes)
@@ -450,6 +460,14 @@ export class PlaybackController {
 	get playing() { return this._scheduler?.playing ?? false }
 	get currentTime() { return this._scheduler?.currentTime ?? 0 }
 	get duration() { return this._scheduler?.duration ?? 0 }
+
+	get octaveShift() { return this._octaveShift ?? 0 }
+	set octaveShift(value) { this.setOctaveShift(value) }
+
+	setOctaveShift(shift) {
+		this._octaveShift = Math.max(-3, Math.min(3, Math.round(shift || 0)))
+		this._reloadFiltered()
+	}
 
 	/** Current playback speed multiplier (1 = normal). */
 	get speed() { return this._speed }
@@ -591,7 +609,7 @@ export class PlaybackController {
 		}
 		// Ensure tokens have been interpreted (name, octave, tickValue, etc.)
 		interpret(data)
-		const { notes, channels } = buildNoteEvents(data)
+		const { notes, channels } = buildNoteEvents(data, this._octaveShift || 0)
 		this._allNotes = notes
 		this._scoreData = data
 

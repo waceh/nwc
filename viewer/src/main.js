@@ -416,13 +416,16 @@ function handlePlayToggleGesture() {
 
 playBtn.onclick = handlePlayToggleGesture
 
-// Spacebar play/pause — ignored while typing into an input/select so it
-// doesn't hijack normal text/number entry.
+// Spacebar play/pause — ignored while typing into an input/textarea so it
+// doesn't hijack normal text entry.
 document.addEventListener('keydown', (e) => {
 	if (e.code !== 'Space') return
 	const tag = document.activeElement?.tagName
-	if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+	if (tag === 'INPUT' || tag === 'TEXTAREA') return
 	e.preventDefault()
+	if (document.activeElement && document.activeElement !== document.body) {
+		document.activeElement.blur()
+	}
 	handlePlayToggleGesture()
 })
 
@@ -522,6 +525,43 @@ if (soloSelect) {
 		// Re-filter and reload if we have notes loaded
 		await playback._reloadFiltered()
 		highlighter.setNoteEvents(playback.getFilteredNoteEvents())
+	}
+}
+
+// Octave shift buttons (-2 to +2 range)
+let currentOctaveShift = 0
+const octaveDownBtn = document.getElementById('octave_down')
+const octaveUpBtn = document.getElementById('octave_up')
+const octaveDisplay = document.getElementById('octave_display')
+
+function updateOctaveUI() {
+	if (octaveDisplay) {
+		octaveDisplay.textContent = currentOctaveShift > 0 ? `+${currentOctaveShift}` : `${currentOctaveShift}`
+	}
+	playback.octaveShift = currentOctaveShift
+	const notes = playback.getFilteredNoteEvents()
+	if (notes && notes.length > 0) {
+		highlighter.setNoteEvents(notes)
+	}
+}
+
+if (octaveDownBtn) {
+	octaveDownBtn.onclick = (e) => {
+		if (currentOctaveShift > -2) {
+			currentOctaveShift--
+			updateOctaveUI()
+		}
+		e.currentTarget.blur()
+	}
+}
+
+if (octaveUpBtn) {
+	octaveUpBtn.onclick = (e) => {
+		if (currentOctaveShift < 2) {
+			currentOctaveShift++
+			updateOctaveUI()
+		}
+		e.currentTarget.blur()
 	}
 }
 
@@ -1106,23 +1146,6 @@ const sizeUpBtn = document.getElementById('size_up')
 if (sizeDownBtn) sizeDownBtn.onclick = () => { setFontSize(getFontSize() - 4); rerender() }
 if (sizeUpBtn) sizeUpBtn.onclick = () => { setFontSize(getFontSize() + 4); rerender() }
 
-// ---- Advanced panel toggle (font, ink, spacing tuning, debug tools) ----
-
-const advancedToggle = document.getElementById('advanced_toggle')
-const advancedPanel = document.getElementById('advanced_panel')
-if (advancedToggle && advancedPanel) {
-	advancedToggle.onclick = () => {
-		const isOpen = advancedPanel.classList.toggle('open')
-		advancedToggle.classList.toggle('active', isOpen)
-		// The panel's open/close changes #top's height, so the score canvas
-		// (sized/positioned off the last known layout) needs to recompute —
-		// same reasoning as setFullscreenMode/setMenuSimple below. Without
-		// this the canvas kept its old top offset and visually covered the
-		// panel instead of shifting down to reveal it.
-		window.dispatchEvent(new Event('resize'))
-	}
-}
-
 // ---- Full view (score only, everything else hidden) ----
 
 const fullscreenToggleBtn = document.getElementById('fullscreen_toggle')
@@ -1130,18 +1153,13 @@ const fullscreenExitBtn = document.getElementById('fullscreen_exit')
 
 function setFullscreenMode(on) {
 	document.body.classList.toggle('fullscreen-mode', on)
-	// #score's available height changed size (toolbar/footer just
-	// appeared/disappeared) — reuse the same relayout the resize handler
-	// above already does, rather than duplicating its logic here.
 	window.dispatchEvent(new Event('resize'))
 }
 
 if (fullscreenToggleBtn) fullscreenToggleBtn.onclick = () => setFullscreenMode(true)
 if (fullscreenExitBtn) fullscreenExitBtn.onclick = () => setFullscreenMode(false)
 
-// ---- Menu simplify (independent of full view above — collapses the
-// toolbar to a single row: 메뉴 보기 / 재생 / 정지 / 음량, rather than
-// hiding it entirely, so playback controls stay reachable) ----
+// ---- Menu simplify (collapses the toolbar to a single row: Open / 재생 / 정지 / 옥타브 / 음량) ----
 
 const menuSimpleToggleBtn = document.getElementById('menu_simple_toggle')
 const menuFullToggleBtn = document.getElementById('menu_full_toggle')
@@ -1157,7 +1175,6 @@ if (menuFullToggleBtn) menuFullToggleBtn.onclick = () => setMenuSimple(false)
 document.addEventListener('keydown', (e) => {
 	if (e.key !== 'Escape') return
 	if (document.body.classList.contains('fullscreen-mode')) setFullscreenMode(false)
-	if (document.body.classList.contains('menu-simple')) setMenuSimple(false)
 })
 
 // ---- Spacing density slider ----
