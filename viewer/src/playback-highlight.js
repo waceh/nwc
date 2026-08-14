@@ -157,6 +157,7 @@ export class PlaybackHighlighter {
 						time: playbackOffset + (noteSec - segStartSec),
 						x: head.x + (head.offsetX || 0),
 						y: head.y + (head.offsetY || 0),
+						sysIdx: head._sysIdx != null ? head._sysIdx : (tok._sysIdx != null ? tok._sysIdx : 0),
 					})
 				}
 			}
@@ -478,12 +479,17 @@ export class PlaybackHighlighter {
 	 * notehead X for exact alignment with note highlights.
 	 */
 	_drawCursor(ctx, systemGeometry) {
-		var posX, posY
+		const pos = this._getCursorPosition(this._currentTime)
+		if (!pos) return
+
+		var posX = pos.x
+		var posY = pos.y
+		var sysIdx = pos.sysIdx
 
 		// When snap-to-notes is enabled and notes are active, lock cursor X
 		// to the leftmost active notehead for exact alignment with highlights.
 		if (this._snapToNotes && this._activeTokens.size > 0) {
-			var minX = Infinity, anyY = null
+			var minX = Infinity, anyY = null, snapSysIdx = null
 			for (const token of this._activeTokens) {
 				const head = token.drawingNoteHead
 					|| (token.notes && token.notes[0] && token.notes[0].drawingNoteHead)
@@ -492,20 +498,14 @@ export class PlaybackHighlighter {
 				if (hx < minX) {
 					minX = hx
 					anyY = head.y + (head.offsetY || 0)
+					snapSysIdx = head._sysIdx != null ? head._sysIdx : (token._sysIdx != null ? token._sysIdx : null)
 				}
 			}
 			if (minX < Infinity) {
 				posX = minX
 				posY = anyY
+				if (snapSysIdx != null) sysIdx = snapSysIdx
 			}
-		}
-
-		// Default: smooth time-based interpolation
-		if (posX == null) {
-			const pos = this._getCursorPosition(this._currentTime)
-			if (!pos) return
-			posX = pos.x
-			posY = pos.y
 		}
 
 		// Determine cursor vertical span from system geometry
@@ -513,12 +513,18 @@ export class PlaybackHighlighter {
 		const margin = fs * 0.5
 		var topY, botY
 
-		const sys = this._findSystem(posX, posY, systemGeometry)
-		if (sys) {
-			topY = sys.topY - margin
-			botY = sys.bottomY + margin
-		} else {
-			// Fallback if no system geometry
+		if (systemGeometry && systemGeometry.length > 0) {
+			var sys = (sysIdx != null && systemGeometry[sysIdx])
+				? systemGeometry[sysIdx]
+				: this._findSystem(posX, posY, systemGeometry)
+
+			if (sys) {
+				topY = sys.topY - margin
+				botY = sys.bottomY + margin
+			}
+		}
+
+		if (topY == null) {
 			topY = posY - fs * 1.5
 			botY = posY + fs * 10
 		}
@@ -534,8 +540,8 @@ export class PlaybackHighlighter {
 	}
 
 	/**
-	 * Binary-search the time index to find the cursor X/Y for a given time.
-	 * Interpolates linearly between adjacent index entries.
+	 * Binary-search the time index to find the cursor X/Y and system index for a given time.
+	 * Interpolates linearly between adjacent index entries within the same system.
 	 */
 	_getCursorPosition(time) {
 		const idx = this._timeIndex
@@ -543,11 +549,12 @@ export class PlaybackHighlighter {
 
 		// Before first note
 		if (time <= idx[0].time) {
-			return { x: idx[0].x, y: idx[0].y }
+			return { x: idx[0].x, y: idx[0].y, sysIdx: idx[0].sysIdx }
 		}
 		// After last note
 		if (time >= idx[idx.length - 1].time) {
-			return { x: idx[idx.length - 1].x, y: idx[idx.length - 1].y }
+			const last = idx[idx.length - 1]
+			return { x: last.x, y: last.y, sysIdx: last.sysIdx }
 		}
 
 		// Binary search for the interval containing `time`
@@ -561,23 +568,25 @@ export class PlaybackHighlighter {
 		const a = idx[lo]
 		const b = idx[hi]
 		const dt = b.time - a.time
-		if (dt <= 0) return { x: a.x, y: a.y }
+		if (dt <= 0) return { x: a.x, y: a.y, sysIdx: a.sysIdx }
 
 		const t = (time - a.time) / dt
 
 		// Cross-system boundary detection:
-		// Within the same system, notes progress forward in X (b.x >= a.x - fs).
-		// A system break happens when X wraps backward (b.x < a.x - fs * 2) or Y jumps far (> systemHeight).
-		const fs = getFontSize()
-		const isCrossSystem = b.x < a.x - fs * 2 || Math.abs(b.y - a.y) > fs * 12
+		// When a and b belong to different systems, cleanly switch systems at t = 0.5.
+		const isCrossSystem = (a.sysIdx != null && b.sysIdx != null && a.sysIdx !== b.sysIdx)
+			|| b.x < a.x - getFontSize() * 2
+
 		if (isCrossSystem) {
-			// Cross-system boundary — snap to whichever is closer in time
-			return t < 0.5 ? { x: a.x, y: a.y } : { x: b.x, y: b.y }
+			return t < 0.5
+				? { x: a.x, y: a.y, sysIdx: a.sysIdx }
+				: { x: b.x, y: b.y, sysIdx: b.sysIdx }
 		}
 
 		return {
 			x: a.x + (b.x - a.x) * t,
 			y: a.y + (b.y - a.y) * t,
+			sysIdx: a.sysIdx != null ? a.sysIdx : 0,
 		}
 	}
 
@@ -635,7 +644,10 @@ export class PlaybackHighlighter {
 		const halfWidth = fs * 0.4  // column half-width: ~0.8 staff spaces total
 
 		var topY, botY
-		const sys = this._findSystem(pos.x, pos.y, systemGeometry)
+		var sys = (pos.sysIdx != null && systemGeometry && systemGeometry[pos.sysIdx])
+			? systemGeometry[pos.sysIdx]
+			: this._findSystem(pos.x, pos.y, systemGeometry)
+
 		if (sys) {
 			topY = sys.topY - fs * 0.5
 			botY = sys.bottomY + fs * 0.5

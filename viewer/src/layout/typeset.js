@@ -1749,12 +1749,13 @@ function scoreWrapLayout(drawing, data, staves, stavePointers, ctx, canvas) {
 			var justEnd = justify(relEnd) + leftMargin + courtesyW
 			el.width = justEnd - el.x
 			el.endx = justEnd
-			// Store system index for cross-system tie/slur detection
-			el._sysIdx = sysIdx
 		}
 		else {
 			el.x = justify(relX) + leftMargin + courtesyW
 		}
+
+		// Store system index on every laid-out element for exact cursor/playback tracking
+		el._sysIdx = sysIdx
 
 		// Shift Y: add the system's vertical offset
 		var yShift = sysIdx * (systemHeight + interSystemGap)
@@ -2184,11 +2185,12 @@ function scorePageLayout(drawing, data, staves, stavePointers, ctx, canvas) {
 			var justEnd = justifyP(relEnd) + leftMargin + courtesyW + horizontalPad + xPageShift
 			el.width = justEnd - el.x
 			el.endx = justEnd
-			// Store system index for cross-system tie/slur detection
-			el._sysIdx = sysIdx
 		} else {
 			el.x = justifyP(relX) + leftMargin + courtesyW + horizontalPad + xPageShift
 		}
+		
+		// Store system index on every laid-out element for exact cursor/playback tracking
+		el._sysIdx = sysIdx
 
 		// Y: offset from single-line staff Y to absolute page position
 		var yShift = systemYOffsets[sysIdx] - firstStaffY
