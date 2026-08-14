@@ -428,39 +428,48 @@ export class PlaybackHighlighter {
 
 	/**
 	 * Find the system bounding a given (x, y) point from systemGeometry.
-	 * Checks both X and Y bounds, falling back to Y range or closest system.
+	 * Filters candidates by horizontal (X) bounds, then finds the closest
+	 * system by vertical (Y) position to eliminate cross-system overlap bugs.
 	 */
 	_findSystem(x, y, systemGeometry) {
 		if (!systemGeometry || systemGeometry.length === 0) return null
 
 		const fs = getFontSize()
-		const margin = fs * 0.5
+		const margin = fs * 0.7
 
-		// 1. Exact match (both X and Y within system bounds)
-		for (let i = 0; i < systemGeometry.length; i++) {
-			const sys = systemGeometry[i]
-			const inX = x >= sys.startX - margin && x <= sys.endX + margin
-			const inY = y >= sys.topY - fs && y <= sys.bottomY + fs
-			if (inX && inY) return sys
-		}
-
-		// 2. Match by Y range (useful if x is slightly before start or after end)
-		for (let i = 0; i < systemGeometry.length; i++) {
-			const sys = systemGeometry[i]
-			if (y >= sys.topY - fs * 2 && y <= sys.bottomY + fs * 2) {
-				return sys
-			}
-		}
-
-		// 3. Match by X range (e.g. scroll mode or single-system layout)
+		// 1. Filter systems that contain x within horizontal bounds
+		let xCandidates = []
 		for (let i = 0; i < systemGeometry.length; i++) {
 			const sys = systemGeometry[i]
 			if (x >= sys.startX - margin && x <= sys.endX + margin) {
+				xCandidates.push(sys)
+			}
+		}
+		if (xCandidates.length === 0) {
+			xCandidates = systemGeometry
+		}
+
+		// 2. Exact match in Y range
+		for (let i = 0; i < xCandidates.length; i++) {
+			const sys = xCandidates[i]
+			if (y >= sys.topY && y <= sys.bottomY) {
 				return sys
 			}
 		}
 
-		return systemGeometry[0]
+		// 3. Closest in Y distance (matching center)
+		let best = null, minDist = Infinity
+		for (let i = 0; i < xCandidates.length; i++) {
+			const sys = xCandidates[i]
+			const cy = (sys.topY + sys.bottomY) / 2
+			const dist = Math.abs(y - cy)
+			if (dist < minDist) {
+				minDist = dist
+				best = sys
+			}
+		}
+
+		return best || systemGeometry[0]
 	}
 
 	/**

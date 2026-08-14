@@ -1,6 +1,6 @@
 # NWC Converter & Viewer
 
-v1.0.816
+v1.0.817
 
 NoteWorthy Composer(`.nwc`) 파일을 브라우저에서 바로 열어보고, **MusicXML** 또는 **MIDI**로 변환합니다. 서버 없이 전부 브라우저 안에서 처리되며, 파일이 외부로 전송되지 않습니다.
 
