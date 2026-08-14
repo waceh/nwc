@@ -733,12 +733,13 @@ function toggleParser() {
 const parserBtn = document.getElementById('parser_toggle')
 if (parserBtn) parserBtn.onclick = toggleParser
 
-// Restore persisted parser preference — defaults to 기존 파서 (the legacy
-// src/nwc.js parser) unless the user has explicitly switched to 새 파서
-// before.
+// Restore persisted parser preference — defaults to 새 파서 (the robust
+// lib/nwc2xml parser) unless the user has explicitly switched before.
 const storedParser = localStorage.getItem(PARSER_STORAGE_KEY)
 if (storedParser !== null) {
 	setUseNewParser(storedParser === 'true')
+} else {
+	setUseNewParser(true)
 }
 updateParserButton()
 

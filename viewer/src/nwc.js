@@ -15,7 +15,7 @@ var should_debug = false
 // accidental list, e.g. rendering a 2-flat key as 5 sharps) and drop
 // Lyric1/Lyric2 verse text entirely — both fixed. Defaults to 기존 파서.
 // Can be toggled at runtime via setUseNewParser()
-let USE_NEW_PARSER = false;
+let USE_NEW_PARSER = true;
 
 export function getUseNewParser() {
 	return USE_NEW_PARSER;
