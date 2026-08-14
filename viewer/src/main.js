@@ -21,18 +21,16 @@ import { parseMusicXML, isMusicXMLFile } from './musicxml-import.js'
  **********************/
 
 window.addEventListener('resize', () => {
+	resizeToFit()
 	if (getLayoutMode() === 'wrap') {
 		// In wrap mode, the layout depends on viewport width — must re-layout
 		rerender()
-	} else {
+	} else if (getZoomFitMode() !== 'none') {
 		// If a fit mode is active, recalculate the zoom
-		if (getZoomFitMode() !== 'none') {
-			applyZoomFit()
-		} else {
-			resizeToFit()
-			var scoreElm = document.getElementById('score')
-			quickDraw(null, -(scoreElm?.scrollLeft || 0), -(scoreElm?.scrollTop || 0))
-		}
+		applyZoomFit()
+	} else {
+		var scoreElm = document.getElementById('score')
+		quickDraw(null, -(scoreElm?.scrollLeft || 0), -(scoreElm?.scrollTop || 0))
 	}
 })
 
@@ -1032,6 +1030,8 @@ function applyZoomFit() {
 	const scoreElm = document.getElementById('score')
 	if (!scoreElm || typeof maxCanvasWidth === 'undefined') return
 
+	resizeToFit()
+
 	const mode = getZoomFitMode()
 	if (mode === 'none') return
 
@@ -1154,7 +1154,17 @@ const fullscreenExitBtn = document.getElementById('fullscreen_exit')
 
 function setFullscreenMode(on) {
 	document.body.classList.toggle('fullscreen-mode', on)
-	window.dispatchEvent(new Event('resize'))
+	requestAnimationFrame(() => {
+		resizeToFit()
+		if (getLayoutMode() === 'wrap') {
+			rerender()
+		} else if (getZoomFitMode() !== 'none') {
+			applyZoomFit()
+		} else {
+			var scoreElm = document.getElementById('score')
+			quickDraw(null, -(scoreElm?.scrollLeft || 0), -(scoreElm?.scrollTop || 0))
+		}
+	})
 }
 
 if (fullscreenToggleBtn) fullscreenToggleBtn.onclick = () => setFullscreenMode(true)
@@ -1167,7 +1177,17 @@ const menuFullToggleBtn = document.getElementById('menu_full_toggle')
 
 function setMenuSimple(on) {
 	document.body.classList.toggle('menu-simple', on)
-	window.dispatchEvent(new Event('resize'))
+	requestAnimationFrame(() => {
+		resizeToFit()
+		if (getLayoutMode() === 'wrap') {
+			rerender()
+		} else if (getZoomFitMode() !== 'none') {
+			applyZoomFit()
+		} else {
+			var scoreElm = document.getElementById('score')
+			quickDraw(null, -(scoreElm?.scrollLeft || 0), -(scoreElm?.scrollTop || 0))
+		}
+	})
 }
 
 if (menuSimpleToggleBtn) menuSimpleToggleBtn.onclick = () => setMenuSimple(true)

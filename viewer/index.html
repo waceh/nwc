@@ -523,6 +523,8 @@
 				setZoomLevel(newLevel)
 				var zoom = getZoomLevel() // read back clamped value
 
+				if (window.resizeToFit) window.resizeToFit()
+
 				// Update slider and label to match the (clamped) value
 				var slider = document.getElementById('zoom_slider')
 				var label  = document.getElementById('zoom_label')
