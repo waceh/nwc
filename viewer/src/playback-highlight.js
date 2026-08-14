@@ -427,6 +427,43 @@ export class PlaybackHighlighter {
 	// ── Cursor drawing ─────────────────────────────────────────────────────
 
 	/**
+	 * Find the system bounding a given (x, y) point from systemGeometry.
+	 * Checks both X and Y bounds, falling back to Y range or closest system.
+	 */
+	_findSystem(x, y, systemGeometry) {
+		if (!systemGeometry || systemGeometry.length === 0) return null
+
+		const fs = getFontSize()
+		const margin = fs * 0.5
+
+		// 1. Exact match (both X and Y within system bounds)
+		for (let i = 0; i < systemGeometry.length; i++) {
+			const sys = systemGeometry[i]
+			const inX = x >= sys.startX - margin && x <= sys.endX + margin
+			const inY = y >= sys.topY - fs && y <= sys.bottomY + fs
+			if (inX && inY) return sys
+		}
+
+		// 2. Match by Y range (useful if x is slightly before start or after end)
+		for (let i = 0; i < systemGeometry.length; i++) {
+			const sys = systemGeometry[i]
+			if (y >= sys.topY - fs * 2 && y <= sys.bottomY + fs * 2) {
+				return sys
+			}
+		}
+
+		// 3. Match by X range (e.g. scroll mode or single-system layout)
+		for (let i = 0; i < systemGeometry.length; i++) {
+			const sys = systemGeometry[i]
+			if (x >= sys.startX - margin && x <= sys.endX + margin) {
+				return sys
+			}
+		}
+
+		return systemGeometry[0]
+	}
+
+	/**
 	 * Draw a vertical position cursor spanning the full system height.
 	 * When notes are actively sounding, snaps to the leftmost active
 	 * notehead X for exact alignment with note highlights.
@@ -465,19 +502,16 @@ export class PlaybackHighlighter {
 		// Determine cursor vertical span from system geometry
 		const fs = getFontSize()
 		const margin = fs * 0.5
-		var topY = posY - fs * 1.5   // fallback if no geometry
-		var botY = posY + fs * 2
+		var topY, botY
 
-		if (systemGeometry && systemGeometry.length > 0) {
-			// Find the system containing this Y position
-			for (var i = 0; i < systemGeometry.length; i++) {
-				var sys = systemGeometry[i]
-				if (posY >= sys.topY - fs && posY <= sys.bottomY + fs) {
-					topY = sys.topY - margin
-					botY = sys.bottomY + margin
-					break
-				}
-			}
+		const sys = this._findSystem(posX, posY, systemGeometry)
+		if (sys) {
+			topY = sys.topY - margin
+			botY = sys.bottomY + margin
+		} else {
+			// Fallback if no system geometry
+			topY = posY - fs * 1.5
+			botY = posY + fs * 10
 		}
 
 		ctx.save()
@@ -522,11 +556,12 @@ export class PlaybackHighlighter {
 
 		const t = (time - a.time) / dt
 
-		// Only interpolate X within the same system (same Y range).
-		// If Y jumps (different system), snap to the closer entry.
-		const yDiff = Math.abs(b.y - a.y)
+		// Cross-system boundary detection:
+		// Within the same system, notes progress forward in X (b.x >= a.x - fs).
+		// A system break happens when X wraps backward (b.x < a.x - fs * 2) or Y jumps far (> systemHeight).
 		const fs = getFontSize()
-		if (yDiff > fs * 3) {
+		const isCrossSystem = b.x < a.x - fs * 2 || Math.abs(b.y - a.y) > fs * 12
+		if (isCrossSystem) {
 			// Cross-system boundary — snap to whichever is closer in time
 			return t < 0.5 ? { x: a.x, y: a.y } : { x: b.x, y: b.y }
 		}
@@ -590,19 +625,14 @@ export class PlaybackHighlighter {
 		const fs = getFontSize()
 		const halfWidth = fs * 0.4  // column half-width: ~0.8 staff spaces total
 
-		// Find the system containing the cursor Y
-		var topY = pos.y - fs * 1.5
-		var botY = pos.y + fs * 2
-
-		if (systemGeometry && systemGeometry.length > 0) {
-			for (var i = 0; i < systemGeometry.length; i++) {
-				var sys = systemGeometry[i]
-				if (pos.y >= sys.topY - fs && pos.y <= sys.bottomY + fs) {
-					topY = sys.topY - fs * 0.5
-					botY = sys.bottomY + fs * 0.5
-					break
-				}
-			}
+		var topY, botY
+		const sys = this._findSystem(pos.x, pos.y, systemGeometry)
+		if (sys) {
+			topY = sys.topY - fs * 0.5
+			botY = sys.bottomY + fs * 0.5
+		} else {
+			topY = pos.y - fs * 1.5
+			botY = pos.y + fs * 10
 		}
 
 		ctx.save()

@@ -1502,7 +1502,7 @@ function scoreScrollLayout(drawing, data, staves, stavePointers, ctx, canvas) {
 	var staveStartX = fs  // StaveCursor starts at getFontSize() in scroll mode
 	_systemGeometry = [{
 		topY: firstStaffY - fs,
-		bottomY: lastStaveY,
+		bottomY: lastStaveY + fs,
 		startX: staveStartX,
 		endX: maxCanvasWidth,
 	}]
@@ -1830,7 +1830,7 @@ function scoreWrapLayout(drawing, data, staves, stavePointers, ctx, canvas) {
 		var sysJustW = isLastSys ? sysNatWidth + sysCourtW : pageWidth
 		_systemGeometry.push({
 			topY: firstStaffY + gYOffset - fs,
-			bottomY: lastStaffY + gYOffset,
+			bottomY: lastStaffY + gYOffset + fs,
 			startX: leftMargin,
 			endX: leftMargin + sysJustW,
 		})
@@ -2318,7 +2318,7 @@ function scorePageLayout(drawing, data, staves, stavePointers, ctx, canvas) {
 		// After reflow, first staff bottom line is at systemYOffsets[gi]
 		_systemGeometry.push({
 			topY: systemYOffsets[gi] - fs,
-			bottomY: systemYOffsets[gi] + (lastStaffY - firstStaffY),
+			bottomY: systemYOffsets[gi] + (lastStaffY - firstStaffY) + fs,
 			startX: sysXBase,
 			endX: sysXBase + sysJustWP,
 		})
