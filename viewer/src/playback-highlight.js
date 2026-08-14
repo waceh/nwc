@@ -97,10 +97,34 @@ export class PlaybackHighlighter {
 		}
 
 		const tempoMap = buildTempoMap(staves)
+		const systemGeometry = window._systemGeometry || null
+		const fs = getFontSize()
+
+		function findSysIdx(y) {
+			if (!systemGeometry || systemGeometry.length === 0) return 0
+			for (let si = 0; si < systemGeometry.length; si++) {
+				const sys = systemGeometry[si]
+				if (y >= sys.topY - fs * 2 && y <= sys.bottomY + fs * 2) {
+					return si
+				}
+			}
+			let bestIdx = 0, bestDist = Infinity
+			for (let si = 0; si < systemGeometry.length; si++) {
+				const sys = systemGeometry[si]
+				const midY = (sys.topY + sys.bottomY) / 2
+				const dist = Math.abs(y - midY)
+				if (dist < bestDist) {
+					bestDist = dist
+					bestIdx = si
+				}
+			}
+			return bestIdx
+		}
 
 		function resolveHead(tok) {
-			// For Chord tokens, child notes have drawingNoteHead but the
-			// parent may not.  Use the first child's head as fallback.
+			if (tok.type === 'Barline' && tok.drawingBarline) {
+				return tok.drawingBarline
+			}
 			let head = tok.drawingNoteHead
 			if (!head && tok.type === 'Chord' && tok.notes) {
 				for (const n of tok.notes) {
@@ -117,15 +141,20 @@ export class PlaybackHighlighter {
 			if (!tokens) continue
 			for (let ti = 0; ti < tokens.length; ti++) {
 				const tok = tokens[ti]
-				if (tok.type !== 'Note' && tok.type !== 'Chord') continue
+				if (tok.type !== 'Note' && tok.type !== 'Chord' && tok.type !== 'Rest' && tok.type !== 'Barline') continue
 				if (tok.tickValue == null) continue
 				const head = resolveHead(tok)
 				if (!head) continue
 
+				const hx = head.x + (head.offsetX || 0)
+				const hy = head.y + (head.offsetY || 0)
+				const sysIdx = findSysIdx(hy)
+
 				clickIndex.push({
 					time: ticksToSeconds(tok.tickValue, tempoMap),
-					x: head.x + (head.offsetX || 0),
-					y: head.y + (head.offsetY || 0),
+					x: hx,
+					y: hy,
+					sysIdx,
 				})
 			}
 		}
@@ -146,17 +175,22 @@ export class PlaybackHighlighter {
 				if (!tokens) continue
 				for (let ti = 0; ti < tokens.length; ti++) {
 					const tok = tokens[ti]
-					if (tok.type !== 'Note' && tok.type !== 'Chord') continue
+					if (tok.type !== 'Note' && tok.type !== 'Chord' && tok.type !== 'Rest' && tok.type !== 'Barline') continue
 					if (tok.tickValue == null) continue
-					if (tok.tickValue < seg.startTick || tok.tickValue >= seg.endTick) continue
+					if (tok.tickValue < seg.startTick || tok.tickValue > seg.endTick) continue
 					const head = resolveHead(tok)
 					if (!head) continue
 
 					const noteSec = ticksToSeconds(tok.tickValue, tempoMap)
+					const hx = head.x + (head.offsetX || 0)
+					const hy = head.y + (head.offsetY || 0)
+					const sysIdx = findSysIdx(hy)
+
 					index.push({
 						time: playbackOffset + (noteSec - segStartSec),
-						x: head.x + (head.offsetX || 0),
-						y: head.y + (head.offsetY || 0),
+						x: hx,
+						y: hy,
+						sysIdx,
 					})
 				}
 			}
@@ -164,14 +198,27 @@ export class PlaybackHighlighter {
 			playbackOffset += segEndSec - segStartSec
 		}
 
-		// Sort by time, then x (for stable cursor interpolation)
-		index.sort((a, b) => a.time - b.time || a.x - b.x)
+		// Sort by time, then sysIdx, then x
+		index.sort((a, b) => a.time - b.time || a.sysIdx - b.sysIdx || a.x - b.x)
 
-		// Deduplicate identical times — keep the leftmost x (stave 0)
+		// Deduplicate identical times within the SAME system — keep the leftmost x
+		// Different systems at the same time (e.g. system break boundaries) are kept distinct
 		const deduped = []
 		for (let i = 0; i < index.length; i++) {
-			if (i > 0 && index[i].time === index[i - 1].time) continue
-			deduped.push(index[i])
+			const cur = index[i]
+			const prev = deduped[deduped.length - 1]
+			if (prev && Math.abs(cur.time - prev.time) < 0.0001 && cur.sysIdx === prev.sysIdx) {
+				if (cur.x < prev.x) {
+					prev.x = cur.x
+				}
+				continue
+			}
+			deduped.push({
+				time: cur.time,
+				x: cur.x,
+				y: cur.y,
+				sysIdx: cur.sysIdx,
+			})
 		}
 
 		this._timeIndex = deduped
@@ -192,18 +239,21 @@ export class PlaybackHighlighter {
 
 		const fs = getFontSize()
 
-		// Filter to entries in the same system (Y within ~3 staff heights)
+		// Filter to entries in the same system
 		const sameSystem = []
 		for (var i = 0; i < idx.length; i++) {
-			if (Math.abs(idx[i].y - scoreY) < fs * 3) {
+			if (idx[i].sysIdx != null && window._systemGeometry && window._systemGeometry[idx[i].sysIdx]) {
+				const sys = window._systemGeometry[idx[i].sysIdx]
+				if (scoreY >= sys.topY - fs * 2 && scoreY <= sys.bottomY + fs * 2) {
+					sameSystem.push(idx[i])
+				}
+			} else if (Math.abs(idx[i].y - scoreY) < fs * 8) {
 				sameSystem.push(idx[i])
 			}
 		}
 
 		if (sameSystem.length === 0) return null
 
-		// Entries are sorted by time; within a system, X is monotonically
-		// increasing, so sorting by X preserves relative time ordering.
 		sameSystem.sort((a, b) => a.x - b.x)
 
 		// Before first note in this system
@@ -432,7 +482,7 @@ export class PlaybackHighlighter {
 	 * notehead X for exact alignment with note highlights.
 	 */
 	_drawCursor(ctx, systemGeometry) {
-		var posX, posY
+		var posX, posY, sysIdx
 
 		// When snap-to-notes is enabled and notes are active, lock cursor X
 		// to the leftmost active notehead for exact alignment with highlights.
@@ -454,12 +504,13 @@ export class PlaybackHighlighter {
 			}
 		}
 
-		// Default: smooth time-based interpolation
+		// Default: smooth time-based interpolation within the active system
 		if (posX == null) {
-			const pos = this._getCursorPosition(this._currentTime)
+			const pos = this._getCursorPosition(this._currentTime, systemGeometry)
 			if (!pos) return
 			posX = pos.x
 			posY = pos.y
+			sysIdx = pos.sysIdx
 		}
 
 		// Determine cursor vertical span from system geometry
@@ -469,14 +520,35 @@ export class PlaybackHighlighter {
 		var botY = posY + fs * 2
 
 		if (systemGeometry && systemGeometry.length > 0) {
-			// Find the system containing this Y position
-			for (var i = 0; i < systemGeometry.length; i++) {
-				var sys = systemGeometry[i]
-				if (posY >= sys.topY - fs && posY <= sys.bottomY + fs) {
-					topY = sys.topY - margin
-					botY = sys.bottomY + margin
-					break
+			var sys = null
+			if (sysIdx != null && systemGeometry[sysIdx]) {
+				sys = systemGeometry[sysIdx]
+			} else {
+				// Find the system containing this Y position
+				for (var i = 0; i < systemGeometry.length; i++) {
+					var s = systemGeometry[i]
+					if (posY >= s.topY - fs * 2 && posY <= s.bottomY + fs * 2) {
+						sys = s
+						break
+					}
 				}
+				if (!sys) {
+					// Closest system by Y
+					var bestDist = Infinity
+					for (var i = 0; i < systemGeometry.length; i++) {
+						var s = systemGeometry[i]
+						var mid = (s.topY + s.bottomY) / 2
+						var d = Math.abs(posY - mid)
+						if (d < bestDist) {
+							bestDist = d
+							sys = s
+						}
+					}
+				}
+			}
+			if (sys) {
+				topY = sys.topY - margin
+				botY = sys.bottomY + margin
 			}
 		}
 
@@ -491,23 +563,24 @@ export class PlaybackHighlighter {
 	}
 
 	/**
-	 * Binary-search the time index to find the cursor X/Y for a given time.
-	 * Interpolates linearly between adjacent index entries.
+	 * Binary-search the time index to find the cursor X/Y and sysIdx for a given time.
+	 * Interpolates linearly between adjacent index entries within the same system.
 	 */
-	_getCursorPosition(time) {
+	_getCursorPosition(time, systemGeometry) {
 		const idx = this._timeIndex
 		if (idx.length === 0) return null
 
-		// Before first note
+		// Before first entry
 		if (time <= idx[0].time) {
-			return { x: idx[0].x, y: idx[0].y }
+			return { x: idx[0].x, y: idx[0].y, sysIdx: idx[0].sysIdx }
 		}
-		// After last note
+		// After last entry
 		if (time >= idx[idx.length - 1].time) {
-			return { x: idx[idx.length - 1].x, y: idx[idx.length - 1].y }
+			const last = idx[idx.length - 1]
+			return { x: last.x, y: last.y, sysIdx: last.sysIdx }
 		}
 
-		// Binary search for the interval containing `time`
+		// Binary search for interval: idx[lo].time <= time < idx[hi].time
 		let lo = 0, hi = idx.length - 1
 		while (lo < hi - 1) {
 			const mid = (lo + hi) >> 1
@@ -518,22 +591,28 @@ export class PlaybackHighlighter {
 		const a = idx[lo]
 		const b = idx[hi]
 		const dt = b.time - a.time
-		if (dt <= 0) return { x: a.x, y: a.y }
+		if (dt <= 0.0001) return { x: a.x, y: a.y, sysIdx: a.sysIdx }
 
 		const t = (time - a.time) / dt
 
-		// Only interpolate X within the same system (same Y range).
-		// If Y jumps (different system), snap to the closer entry.
-		const yDiff = Math.abs(b.y - a.y)
-		const fs = getFontSize()
-		if (yDiff > fs * 3) {
-			// Cross-system boundary — snap to whichever is closer in time
-			return t < 0.5 ? { x: a.x, y: a.y } : { x: b.x, y: b.y }
+		// Check if a and b are in the SAME system
+		const sameSystem = (a.sysIdx != null && b.sysIdx != null)
+			? a.sysIdx === b.sysIdx
+			: Math.abs(b.y - a.y) < (getFontSize() * 8)
+
+		if (sameSystem) {
+			return {
+				x: a.x + (b.x - a.x) * t,
+				y: a.y,
+				sysIdx: a.sysIdx,
+			}
 		}
 
+		// Cross-system boundary: while time < b.time, we remain strictly in system a at a.x
 		return {
-			x: a.x + (b.x - a.x) * t,
-			y: a.y + (b.y - a.y) * t,
+			x: a.x,
+			y: a.y,
+			sysIdx: a.sysIdx,
 		}
 	}
 
@@ -546,21 +625,33 @@ export class PlaybackHighlighter {
 	 */
 	_drawBarHighlight(ctx, systemGeometry, measureGeometry) {
 		// Get the cursor position to determine which measure is active
-		const pos = this._getCursorPosition(this._currentTime)
+		const pos = this._getCursorPosition(this._currentTime, systemGeometry)
 		if (!pos) return
 
 		const fs = getFontSize()
 
 		// Find the measure containing the cursor position.
-		// Match on X within the measure bounds, and Y within the system
-		// (with tolerance for cross-system edge cases).
 		var activeMeasure = null
 		for (var i = 0; i < measureGeometry.length; i++) {
 			var m = measureGeometry[i]
-			if (pos.x >= m.startX - 1 && pos.x <= m.endX + 1 &&
-				pos.y >= m.topY - fs * 2 && pos.y <= m.bottomY + fs * 2) {
+			var yMatches = (pos.sysIdx != null && m.sysIdx != null)
+				? pos.sysIdx === m.sysIdx
+				: (pos.y >= m.topY - fs * 2 && pos.y <= m.bottomY + fs * 2)
+
+			if (yMatches && pos.x >= m.startX - 2 && pos.x <= m.endX + 2) {
 				activeMeasure = m
 				break
+			}
+		}
+
+		// Fallback: match by sysIdx and closest X in that system
+		if (!activeMeasure && pos.sysIdx != null) {
+			for (var i = 0; i < measureGeometry.length; i++) {
+				var m = measureGeometry[i]
+				if (m.sysIdx === pos.sysIdx && pos.x >= m.startX - 10 && pos.x <= m.endX + 10) {
+					activeMeasure = m
+					break
+				}
 			}
 		}
 
@@ -584,24 +675,32 @@ export class PlaybackHighlighter {
 	 * spanning all staves in the system.  About one staff-space wide.
 	 */
 	_drawColumnHighlight(ctx, systemGeometry) {
-		const pos = this._getCursorPosition(this._currentTime)
+		const pos = this._getCursorPosition(this._currentTime, systemGeometry)
 		if (!pos) return
 
 		const fs = getFontSize()
 		const halfWidth = fs * 0.4  // column half-width: ~0.8 staff spaces total
 
-		// Find the system containing the cursor Y
+		// Find the system containing the cursor
 		var topY = pos.y - fs * 1.5
 		var botY = pos.y + fs * 2
 
 		if (systemGeometry && systemGeometry.length > 0) {
-			for (var i = 0; i < systemGeometry.length; i++) {
-				var sys = systemGeometry[i]
-				if (pos.y >= sys.topY - fs && pos.y <= sys.bottomY + fs) {
-					topY = sys.topY - fs * 0.5
-					botY = sys.bottomY + fs * 0.5
-					break
+			var sys = null
+			if (pos.sysIdx != null && systemGeometry[pos.sysIdx]) {
+				sys = systemGeometry[pos.sysIdx]
+			} else {
+				for (var i = 0; i < systemGeometry.length; i++) {
+					var s = systemGeometry[i]
+					if (pos.y >= s.topY - fs * 2 && pos.y <= s.bottomY + fs * 2) {
+						sys = s
+						break
+					}
 				}
+			}
+			if (sys) {
+				topY = sys.topY - fs * 0.5
+				botY = sys.bottomY + fs * 0.5
 			}
 		}
 

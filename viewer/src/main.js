@@ -664,9 +664,19 @@ const rerender = () => {
 
 window.exportLilypond = exportLilypond
 
+function resetOctaveShift() {
+	currentOctaveShift = 0
+	playback.octaveShift = 0
+	const octaveDisplay = document.getElementById('octave_display')
+	if (octaveDisplay) {
+		octaveDisplay.textContent = '0'
+	}
+}
+
 function setDataAndRender(_data) {
 	scoreManager.setData(_data)
 	updateSoloStaffOptions(_data)
+	resetOctaveShift()
 	rerender()
 	// New score — force the next play to (re)load it instead of resuming
 	// stale scheduler state from whatever was loaded before.
