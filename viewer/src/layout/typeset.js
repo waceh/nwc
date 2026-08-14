@@ -163,7 +163,6 @@ function buildMeasureGeometry(staves) {
 			endX: bar.x,
 			topY: sys.topY,
 			bottomY: sys.bottomY,
-			sysIdx: bar.sysIdx,
 		})
 
 		prevBarX = bar.x
@@ -1510,8 +1509,6 @@ function scoreScrollLayout(drawing, data, staves, stavePointers, ctx, canvas) {
 
 	// Build measure geometry from barline positions
 	_measureGeometry = buildMeasureGeometry(staves)
-	window._systemGeometry = _systemGeometry
-	window._measureGeometry = _measureGeometry
 
 	drawBracketsAndBraces(drawing, staves, 0)
 	drawStaffLabels(drawing, staves, 0)
@@ -1841,8 +1838,6 @@ function scoreWrapLayout(drawing, data, staves, stavePointers, ctx, canvas) {
 
 	// Build measure geometry from barline positions
 	_measureGeometry = buildMeasureGeometry(staves)
-	window._systemGeometry = _systemGeometry
-	window._measureGeometry = _measureGeometry
 
 	drawTitleAndAuthor(drawing, data, maxCanvasWidth)
 	sizeSpacerAndRender(canvas, maxCanvasWidth, maxCanvasHeight)
@@ -2331,8 +2326,6 @@ function scorePageLayout(drawing, data, staves, stavePointers, ctx, canvas) {
 
 	// Build measure geometry from barline positions
 	_measureGeometry = buildMeasureGeometry(staves)
-	window._systemGeometry = _systemGeometry
-	window._measureGeometry = _measureGeometry
 
 	// --- Canvas sizing ---
 	maxCanvasWidth = totalCanvasWidth
