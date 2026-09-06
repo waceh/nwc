@@ -1,4 +1,4 @@
-import { getFontSize, getZoomLevel, getLayoutMode, getPageDimensions, getPageMargins, getPageViewMode, getMusicTextFamily, getSpacingModel, getSpringDensity, getRodSpringBalance, getDurationProportionality } from '../constants.js'
+import { getFontSize, getZoomLevel, getLayoutMode, getPageDimensions, getPageMargins, getPageViewMode, getMusicTextFamily, getSpacingModel, getSpringDensity, getRodSpringBalance, getDurationProportionality, getMeasuresPerSystem } from '../constants.js'
 import { layoutBeaming } from './beams.js'
 import { layoutTies } from './ties.js'
 import { resizeToFit, DynamicMarking, ArticulationMark, Hairpin, VoltaBracket, TupletBracket, Glyph, PartialTie, getCode, glyphPathGet } from '../drawing.js'
@@ -63,6 +63,7 @@ class StaveCursor {
 	/* position a drawing object to the current x position of this cursor */
 	posGlyph(glyph) {
 		glyph.moveTo(this.staveX, getStaffY(this.staveIndex))
+		glyph._staffIndex = this.staveIndex
 	}
 
 	incTokenIndex() {
@@ -303,8 +304,30 @@ function computeSystemBreaks(boundaries, pageWidth, leftMargin) {
 	const allBreaks = []
 	let systemIndex = 0
 
+	const defaultBarsPerSys = (typeof getMeasuresPerSystem === 'function') ? getMeasuresPerSystem() : 4
+
 	for (const seg of segments) {
-		const segBreaks = dpOptimalBreaks(boundaries, seg.start, seg.end, pageWidth)
+		const isForcedEnd = forcedBreakIndices.includes(seg.end)
+		const measureCount = seg.end - seg.start + 1
+
+		let segBreaks = []
+
+		if (isForcedEnd) {
+			// If this segment ends in an explicit forced break (SysBreak) and has a reasonable
+			// measure count (<= 8 measures), it represents a system explicitly formatted
+			// by the score author — keep it intact without inserting extra breaks.
+			if (measureCount > 8) {
+				for (let bi = seg.start + defaultBarsPerSys - 1; bi < seg.end; bi += defaultBarsPerSys) {
+					segBreaks.push(bi)
+				}
+			}
+		} else {
+			// No explicit line break in this segment (or score has no forced breaks at all):
+			// Default to 4 measures per line as requested.
+			for (let bi = seg.start + defaultBarsPerSys - 1; bi < seg.end; bi += defaultBarsPerSys) {
+				segBreaks.push(bi)
+			}
+		}
 
 		for (const bi of segBreaks) {
 			allBreaks.push({ x: boundaries[bi].x, boundaryIndex: bi, systemIndex })
@@ -312,7 +335,7 @@ function computeSystemBreaks(boundaries, pageWidth, leftMargin) {
 		}
 
 		// If this segment ended at a forced break, add that break too
-		if (forcedBreakIndices.includes(seg.end)) {
+		if (isForcedEnd) {
 			allBreaks.push({
 				x: boundaries[seg.end].x,
 				boundaryIndex: seg.end,
@@ -437,7 +460,10 @@ function computeBadness(lineWidth, pageWidth, isLastLine) {
 const REFLOW_THRESHOLD = 0.75
 
 function reflowIfSparse(boundaries, firstBreaks, pageWidth, leftMargin, singleLineWidth) {
-	if (firstBreaks.length === 0) return firstBreaks
+	return firstBreaks
+}
+
+function _legacyReflowIfSparse(boundaries, firstBreaks, pageWidth, leftMargin, singleLineWidth) {
 
 	var breakXs = firstBreaks.map(b => b.x)
 	var systemCount = breakXs.length + 1
@@ -478,6 +504,84 @@ function reflowIfSparse(boundaries, firstBreaks, pageWidth, leftMargin, singleLi
 		...brk,
 		x: boundaries[brk.boundaryIndex].x,
 	}))
+}
+
+/**
+ * Assign system index (_sysIdx) to all tokens and their drawing elements
+ * based on measure/barline boundaries. This guarantees that every staff
+ * breaks at the exact same measure, preventing cross-staff system splits.
+ */
+function assignSystemIndices(staves, systemBreaks) {
+	for (let si = 0; si < staves.length; si++) {
+		const tokens = staves[si].tokens
+		if (!tokens) continue
+		let curSys = 0
+		let barIdx = 0
+		for (let ti = 0; ti < tokens.length; ti++) {
+			const tok = tokens[ti]
+			tok._sysIdx = curSys
+			if (tok.drawingNoteHead) tok.drawingNoteHead._sysIdx = curSys
+			if (tok.drawingAccidental) tok.drawingAccidental._sysIdx = curSys
+			if (tok.drawingRest) tok.drawingRest._sysIdx = curSys
+			if (tok.drawingLyric) tok.drawingLyric._sysIdx = curSys
+			if (tok.drawingStem) tok.drawingStem._sysIdx = curSys
+			if (tok.notes) {
+				for (let ni = 0; ni < tok.notes.length; ni++) {
+					const n = tok.notes[ni]
+					n._sysIdx = curSys
+					if (n.drawingNoteHead) n.drawingNoteHead._sysIdx = curSys
+					if (n.drawingAccidental) n.drawingAccidental._sysIdx = curSys
+					if (n.drawingStem) n.drawingStem._sysIdx = curSys
+				}
+			}
+			if (tok.type === 'Barline') {
+				if (tok.drawingBarline) tok.drawingBarline._sysIdx = curSys
+				if (curSys < systemBreaks.length && barIdx === systemBreaks[curSys].boundaryIndex) {
+					curSys++
+				}
+				barIdx++
+			}
+		}
+	}
+}
+
+/**
+ * Collect break X positions for each staff at the system break barlines.
+ * Each staff uses its own barline positions so relX is exact per staff.
+ */
+function buildStaffBreakXs(staves, systemBreaks, breakXs) {
+	const staffBreakXs = []
+	for (let si = 0; si < staves.length; si++) {
+		const sBars = staves[si].tokens.filter(t => t.type === 'Barline')
+		const sXs = []
+		for (let bi = 0; bi < systemBreaks.length; bi++) {
+			const barIdx = systemBreaks[bi].boundaryIndex
+			if (sBars[barIdx] && sBars[barIdx].drawingBarline) {
+				sXs.push(sBars[barIdx].drawingBarline.x)
+			} else {
+				sXs.push(breakXs[bi])
+			}
+		}
+		staffBreakXs.push(sXs)
+	}
+	return staffBreakXs
+}
+
+/**
+ * Find the staff index corresponding to an element's single-line Y coordinate.
+ */
+function findStaffIndexForElement(el, staffYMap) {
+	if (!staffYMap || staffYMap.length === 0) return 0
+	let bestIdx = 0
+	let minDist = Infinity
+	for (let si = 0; si < staffYMap.length; si++) {
+		const dist = Math.abs(el.y - staffYMap[si])
+		if (dist < minDist) {
+			minDist = dist
+			bestIdx = si
+		}
+	}
+	return bestIdx
 }
 
 // Maximum stretch factor per gap between adjacent anchors (note positions).
@@ -948,8 +1052,8 @@ function layoutLyricDashes(drawing, staves) {
 
 		for (var i = 0; i < tokens.length; i++) {
 			var token = tokens[i]
-			// Only notes/chords with a hyphen-terminated lyric
-			if (!token.text || !token.text.endsWith('-')) continue
+			// Only notes/chords with a hyphen-terminated lyric (exclude standalone '-')
+			if (!token.text || token.text === '-' || !token.text.endsWith('-')) continue
 			if (!token.drawingNoteHead) continue
 
 			// Find the next note/chord with a drawingNoteHead (the next lyric target)
@@ -970,9 +1074,9 @@ function layoutLyricDashes(drawing, staves) {
 			var midX = (startX + endX) / 2
 
 			var dash = new Text('-', 0, {
-			font: lyricFontSize + 'px ' + getMusicTextFamily(),
-			textAlign: 'center',
-		})
+				font: lyricFontSize + "px 'Times New Roman', serif",
+				textAlign: 'center',
+			})
 
 			dash.moveTo(midX, thisStaveY)
 			dash.offsetY = lyricOffsetY
@@ -1501,8 +1605,9 @@ function scoreScrollLayout(drawing, data, staves, stavePointers, ctx, canvas) {
 	var firstStaffY = getStaffY(0)
 	var staveStartX = fs  // StaveCursor starts at getFontSize() in scroll mode
 	_systemGeometry = [{
+		systemIndex: 0,
 		topY: firstStaffY - fs,
-		bottomY: lastStaveY + fs,
+		bottomY: lastStaveY,
 		startX: staveStartX,
 		endX: maxCanvasWidth,
 	}]
@@ -1603,6 +1708,10 @@ function scoreWrapLayout(drawing, data, staves, stavePointers, ctx, canvas) {
 	var breakXs = systemBreaks.map(b => b.x)
 	var systemCount = breakXs.length + 1
 
+	// Synchronize tokens across all staves to exact system indices by measure boundary
+	assignSystemIndices(staves, systemBreaks)
+	var staffBreakXs = buildStaffBreakXs(staves, systemBreaks, breakXs)
+
 	// --- Remove single-line stave segments and Path objects (they'll be redrawn per-system) ---
 	// Stave segments from the inline layout need to be redrawn per-system.
 	// Path objects (barline connectors, etc.) use absolute coordinates in their
@@ -1700,15 +1809,21 @@ function scoreWrapLayout(drawing, data, staves, stavePointers, ctx, canvas) {
 		// Skip elements without position (shouldn't happen, but be safe)
 		if (el.x == null || el.y == null) continue
 
-		// Determine which system this element belongs to based on original X
-		let sysIdx = 0
-		for (let i = 0; i < breakXs.length; i++) {
-			if (el.x > breakXs[i]) sysIdx = i + 1
-			else break
+		// Determine which system this element belongs to
+		var staveIdx = el._staffIndex != null ? el._staffIndex : findStaffIndexForElement(el, staffYMap)
+		var sBreaks = (staveIdx != null && staffBreakXs[staveIdx]) ? staffBreakXs[staveIdx] : breakXs
+
+		let sysIdx = el._sysIdx
+		if (sysIdx == null) {
+			sysIdx = 0
+			for (let i = 0; i < sBreaks.length; i++) {
+				if (el.x > sBreaks[i]) sysIdx = i + 1
+				else break
+			}
 		}
 
 		// Compute relative X within this system
-		var systemStartX = sysIdx === 0 ? 0 : breakXs[sysIdx - 1]
+		var systemStartX = sysIdx === 0 ? 0 : sBreaks[sysIdx - 1]
 		var relX = el.x - systemStartX
 		var courtesyW = courtesyWidths[sysIdx]
 		var barlineMap = systemBarlineMaps[sysIdx]
@@ -1830,8 +1945,9 @@ function scoreWrapLayout(drawing, data, staves, stavePointers, ctx, canvas) {
 		var isLastSys = gi === systemCount - 1
 		var sysJustW = isLastSys ? sysNatWidth + sysCourtW : pageWidth
 		_systemGeometry.push({
+			systemIndex: gi,
 			topY: firstStaffY + gYOffset - fs,
-			bottomY: lastStaffY + gYOffset + fs,
+			bottomY: lastStaffY + gYOffset,
 			startX: leftMargin,
 			endX: leftMargin + sysJustW,
 		})
@@ -1955,6 +2071,10 @@ function scorePageLayout(drawing, data, staves, stavePointers, ctx, canvas) {
 	var breakXs = systemBreaks.map(b => b.x)
 	var systemCount = breakXs.length + 1
 
+	// Synchronize tokens across all staves to exact system indices by measure boundary
+	assignSystemIndices(staves, systemBreaks)
+	var staffBreakXs = buildStaffBreakXs(staves, systemBreaks, breakXs)
+
 	// --- Remove single-line stave segments and Path objects ---
 	var toRemove = []
 	for (const el of drawing.set) {
@@ -2033,13 +2153,10 @@ function scorePageLayout(drawing, data, staves, stavePointers, ctx, canvas) {
 	}
 
 	// --- Assign systems to pages ---
-	// Title/author consumes space on page 1
-	var fs = getFontSize()
-	var titleHeight = 0
-	if (data.info?.title) titleHeight += Math.round(fs * 1.07)
-	if (data.info?.author) titleHeight += Math.round(fs * 0.71)
-	if (titleHeight > 0) titleHeight += Math.round(fs * 0.54)  // gap after title block
-
+	// On page 1, if the score has a title or TitlePage is enabled,
+	// reserve header space for the title block (as in NWC TitlePage and PDF).
+	var hasTitlePage = !!(data.info?.title || data.score?.PgSetup?.TitlePage === 'Y')
+	var titleHeight = hasTitlePage ? Math.round(fs * 1.0) : 0
 	var pages = []        // [{systemStart, systemEnd}]
 	var currentPage = 0
 	var currentPageY = titleHeight  // start after title on page 1
@@ -2144,13 +2261,19 @@ function scorePageLayout(drawing, data, staves, stavePointers, ctx, canvas) {
 	for (const el of drawing.set) {
 		if (el.x == null || el.y == null) continue
 
-		let sysIdx = 0
-		for (let i = 0; i < breakXs.length; i++) {
-			if (el.x > breakXs[i]) sysIdx = i + 1
-			else break
+		var staveIdx = el._staffIndex != null ? el._staffIndex : findStaffIndexForElement(el, staffYMap)
+		var sBreaks = (staveIdx != null && staffBreakXs[staveIdx]) ? staffBreakXs[staveIdx] : breakXs
+
+		let sysIdx = el._sysIdx
+		if (sysIdx == null) {
+			sysIdx = 0
+			for (let i = 0; i < sBreaks.length; i++) {
+				if (el.x > sBreaks[i]) sysIdx = i + 1
+				else break
+			}
 		}
 
-		var systemStartX = sysIdx === 0 ? 0 : breakXs[sysIdx - 1]
+		var systemStartX = sysIdx === 0 ? 0 : sBreaks[sysIdx - 1]
 		var relX = el.x - systemStartX
 		var courtesyW = courtesyWidths[sysIdx]
 		var barlineMap = systemBarlineMaps[sysIdx]
@@ -2243,28 +2366,32 @@ function scorePageLayout(drawing, data, staves, stavePointers, ctx, canvas) {
 	}
 
 	// --- Title and author on page 1 ---
-	var page1Pos = pagePositions[0]
-	var page1TopY = page1Pos.y + margins.top
-	var titleCenterX = page1Pos.x + PAGE_W / 2
-	var titleFs = getFontSize()
-	if (data.info?.title) {
-		const titleDraw = new Claire.Text(data.info.title, 0, {
-			font: 'bold ' + Math.round(titleFs * 0.71) + 'px ' + getMusicTextFamily(),
-			textAlign: 'center',
-		})
-		titleDraw.moveTo(titleCenterX, page1TopY + Math.round(titleFs * 0.36))
-		drawing.add(titleDraw)
-	}
-	if (data.info?.author) {
-		const authorDraw = new Claire.Text(data.info.author, 0, {
-			font: 'italic ' + Math.round(titleFs * 0.50) + 'px ' + getMusicTextFamily(),
-			textAlign: 'center',
-		})
-		authorDraw.moveTo(titleCenterX, page1TopY + Math.round(titleFs * 1.07))
-		drawing.add(authorDraw)
+	if (hasTitlePage && pagePositions.length > 0) {
+		var page1Pos = pagePositions[0]
+		var titleCenterX = page1Pos.x + PAGE_W / 2
+		var titleFs = getFontSize()
+		if (data.info?.title) {
+			const titleDraw = new Claire.Text(data.info.title, 0, {
+				font: 'bold ' + Math.round(titleFs * 1.1) + 'px ' + getMusicTextFamily(),
+				textAlign: 'center',
+			})
+			titleDraw.moveTo(titleCenterX, page1Pos.y + Math.round(margins.top * 0.45))
+			drawing.add(titleDraw)
+		}
+		if (data.info?.author) {
+			const authorDraw = new Claire.Text(data.info.author, 0, {
+				font: 'italic ' + Math.round(titleFs * 0.72) + 'px ' + getMusicTextFamily(),
+				textAlign: 'center',
+			})
+			authorDraw.moveTo(titleCenterX, page1Pos.y + Math.round(margins.top * 0.80))
+			drawing.add(authorDraw)
+		}
 	}
 
 	// --- Footer ---
+	var page1Pos = pagePositions[0]
+	var titleCenterX = page1Pos.x + PAGE_W / 2
+	var titleFs = getFontSize()
 	var { copyright1, copyright2 } = data.info || {}
 
 	// In page mode, render copyright on the canvas at the bottom of page 1
@@ -2305,6 +2432,7 @@ function scorePageLayout(drawing, data, staves, stavePointers, ctx, canvas) {
 		interPageGap,
 		horizontalPad,
 		pagePositions,
+		pages,
 	}
 	// Expose for single-page navigation in main.js
 	window._pageGeometry = _pageGeometry
@@ -2315,16 +2443,19 @@ function scorePageLayout(drawing, data, staves, stavePointers, ctx, canvas) {
 		var sysNatWidthP = systemNaturalWidths[gi]
 		var sysCourtWP = courtesyWidths[gi]
 		var isLastSysP = gi === systemCount - 1
-		var sysJustWP = isLastSysP ? sysNatWidthP + sysCourtWP : contentW
+		var sysJustWP = isLastSysP ? Math.min(sysNatWidthP + sysCourtWP, contentW) : contentW
 		var sysXBase = leftMargin + horizontalPad + systemXOffsets[gi]
-		// After reflow, first staff bottom line is at systemYOffsets[gi]
+		var sysYBase = systemYOffsets[gi]
+
 		_systemGeometry.push({
-			topY: systemYOffsets[gi] - fs,
-			bottomY: systemYOffsets[gi] + (lastStaffY - firstStaffY) + fs,
+			systemIndex: gi,
+			topY: sysYBase - fs,
+			bottomY: sysYBase + (lastStaffY - firstStaffY),
 			startX: sysXBase,
 			endX: sysXBase + sysJustWP,
 		})
 	}
+	window._systemGeometry = _systemGeometry
 
 	// Build measure geometry from barline positions
 	_measureGeometry = buildMeasureGeometry(staves)
@@ -2533,27 +2664,7 @@ function drawBarNumbers(drawing, staves, yOffset, leftMarginX, firstMeasureNum, 
  * Draw title and author centered above the score.
  */
 function drawTitleAndAuthor(drawing, data, canvasWidth) {
-	var { title, author, copyright1, copyright2 } = data.info || {}
-
-	var middle = canvasWidth / 2
-	var fs = getFontSize()
-	if (title) {
-		const titleDrawing = new Claire.Text(title, 0, {
-			font: 'bold ' + Math.round(fs * 0.71) + 'px ' + getMusicTextFamily(),
-			textAlign: 'center',
-		})
-		titleDrawing.moveTo(middle, Math.round(fs * 1.43))
-		drawing.add(titleDrawing)
-	}
-
-	if (author) {
-		const authorDrawing = new Claire.Text(author, 0, {
-			font: 'italic ' + Math.round(fs * 0.50) + 'px ' + getMusicTextFamily(),
-			textAlign: 'center',
-		})
-		authorDrawing.moveTo(middle, Math.round(fs * 2.14))
-		drawing.add(authorDrawing)
-	}
+	var { copyright1, copyright2 } = data.info || {}
 	var footerEl = document.getElementById('footer')
 	if (footerEl) footerEl.innerText = (copyright1 || '') + '\n' + (copyright2 || '')
 }
@@ -2762,6 +2873,8 @@ function handleToken(token, tokenIndex, staveIndex, cursor) {
 	// console.log('handleToken', token)
 	const isBarline = type === 'Barline'
 	if (isBarline) {
+		if (cursor.barIndex == null) cursor.barIndex = 0
+		token.barIndex = cursor.barIndex++
 		tickTracker.alignBarline(token, cursor)
 	} else {
 		tickTracker.alignWithMax(token, cursor)
@@ -3294,7 +3407,8 @@ function drawForNote(token, cursor, durToken, skipLedger) {
 	if (token.text) {
 		// Strip trailing hyphens for display — NWC draws hyphens as dashes
 		// centered between note positions, not on the syllable text itself.
-		var displayText = token.text.replace(/-$/, '')
+		// For standalone '-' tokens, keep the '-' as display text.
+		var displayText = token.text === '-' ? '-' : token.text.replace(/-$/, '')
 		if (displayText) {
 			var lyricFontSize = Math.round(getFontSize() * 0.38)
 
@@ -3320,12 +3434,13 @@ function drawForNote(token, cursor, durToken, skipLedger) {
 				lyricOffsetY = getFontSize() * 1.5
 			}
 
-			var lyricFont = lyricFontSize + 'px ' + getMusicTextFamily()
+			var lyricFont = lyricFontSize + "px 'Times New Roman', serif"
 			var text = new Text(displayText, 0, {
 				font: lyricFont,
-				textAlign: 'left',
+				textAlign: 'center',
 			})
 			cursor.posGlyph(text)
+			text.offsetX = (noteHead.width || 0) / 2
 			text.offsetY = lyricOffsetY
 			drawing.add(text)
 

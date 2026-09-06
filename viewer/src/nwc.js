@@ -448,9 +448,13 @@ function convertFromNewParser(nwcFile) {
 					color: staff.color || 0,
 					lyrics: (staff.lyrics || []).map(function(lyric) {
 						// New parser produces pre-split syllable arrays where each
-						// element maps 1:1 to notes.  Pass them through directly.
+						// element maps 1:1 to notes. Pass them through directly,
+						// defensively filtering out any empty strings.
 						// Old parser produces raw strings that need tokenizing.
-						return Array.isArray(lyric) ? lyric : (lyric || '')
+						if (Array.isArray(lyric)) {
+							return lyric.filter(function(s) { return typeof s === 'string' && s.length > 0 })
+						}
+						return lyric || ''
 					}),
 					tokens: (staff.objects || []).map(adaptObject)
 				}

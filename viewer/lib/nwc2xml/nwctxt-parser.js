@@ -40,9 +40,12 @@ function parseLyricText(raw) {
   for (const token of text.trim().split(/\s+/)) {
     if (!token) continue;
     if (token === '_') { syllables.push('_'); continue; }
+    if (/^-+$/.test(token)) { syllables.push('-'); continue; }
     const parts = token.split('-');
-    syllables.push(parts[0]);
-    for (let i = 1; i < parts.length; i++) syllables.push('-' + parts[i]);
+    if (parts[0]) syllables.push(parts[0]);
+    for (let i = 1; i < parts.length; i++) {
+      if (parts[i]) syllables.push('-' + parts[i]);
+    }
   }
   return syllables;
 }

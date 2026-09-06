@@ -23,7 +23,7 @@ const BAR_HIGHLIGHT_COLOR = 'rgba(255, 80, 80, 0.08)' // light red translucent b
 const COLUMN_HIGHLIGHT_COLOR = 'rgba(100, 60, 220, 0.10)' // light purple translucent column
 
 // Valid highlight modes
-const HIGHLIGHT_MODES = ['notes', 'glow', 'bar', 'column', 'none']
+const HIGHLIGHT_MODES = ['cursor', 'notes', 'glow', 'bar', 'column', 'none']
 
 // ── PlaybackHighlighter ────────────────────────────────────────────────────
 
@@ -55,8 +55,8 @@ export class PlaybackHighlighter {
 		// Current playback time (updated ~46ms from scheduler)
 		this._currentTime = 0
 
-		// Highlight mode: 'notes' (colored), 'glow', 'bar', 'column', 'none'
-		this._highlightMode = 'notes'
+		// Highlight mode: 'cursor' (clean bar cursor across system), 'notes', 'glow', 'bar', 'column', 'none'
+		this._highlightMode = 'cursor'
 
 		// Auto-scroll: enabled by default
 		this._autoScrollEnabled = true
@@ -173,6 +173,20 @@ export class PlaybackHighlighter {
 		for (let i = 0; i < index.length; i++) {
 			if (i > 0 && index[i].time === index[i - 1].time) continue
 			deduped.push(index[i])
+		}
+
+		// Enforce strict monotonicity over time:
+		// 1. sysIdx must NEVER decrease (no backwards jumping between lines)
+		// 2. Within the same system, x must NEVER decrease (no backward twitching within a line)
+		for (let i = 1; i < deduped.length; i++) {
+			const prev = deduped[i - 1]
+			const curr = deduped[i]
+			if (curr.sysIdx < prev.sysIdx) {
+				curr.sysIdx = prev.sysIdx
+			}
+			if (curr.sysIdx === prev.sysIdx && curr.x < prev.x) {
+				curr.x = prev.x
+			}
 		}
 
 		this._timeIndex = deduped
@@ -475,8 +489,8 @@ export class PlaybackHighlighter {
 
 	/**
 	 * Draw a vertical position cursor spanning the full system height.
-	 * When notes are actively sounding, snaps to the leftmost active
-	 * notehead X for exact alignment with note highlights.
+	 * Moves horizontally across the system ("칸에 맞게 쭉 가도록") without
+	 * fluctuating vertically.
 	 */
 	_drawCursor(ctx, systemGeometry) {
 		const pos = this._getCursorPosition(this._currentTime)
@@ -487,9 +501,9 @@ export class PlaybackHighlighter {
 		var sysIdx = pos.sysIdx
 
 		// When snap-to-notes is enabled and notes are active, lock cursor X
-		// to the leftmost active notehead for exact alignment with highlights.
+		// to the leftmost active notehead for exact alignment.
 		if (this._snapToNotes && this._activeTokens.size > 0) {
-			var minX = Infinity, anyY = null, snapSysIdx = null
+			var minX = Infinity, snapSysIdx = null
 			for (const token of this._activeTokens) {
 				const head = token.drawingNoteHead
 					|| (token.notes && token.notes[0] && token.notes[0].drawingNoteHead)
@@ -497,21 +511,20 @@ export class PlaybackHighlighter {
 				const hx = head.x + (head.offsetX || 0)
 				if (hx < minX) {
 					minX = hx
-					anyY = head.y + (head.offsetY || 0)
 					snapSysIdx = head._sysIdx != null ? head._sysIdx : (token._sysIdx != null ? token._sysIdx : null)
 				}
 			}
 			if (minX < Infinity) {
 				posX = minX
-				posY = anyY
 				if (snapSysIdx != null) sysIdx = snapSysIdx
 			}
 		}
 
-		// Determine cursor vertical span from system geometry
+		// Determine cursor vertical span from system geometry.
+		// Locked strictly to system bounds so it never jitters or moves up/down.
 		const fs = getFontSize()
-		const margin = fs * 0.5
-		var topY, botY
+		const margin = 3
+		var topY = null, botY = null
 
 		if (systemGeometry && systemGeometry.length > 0) {
 			var sys = (sysIdx != null && systemGeometry[sysIdx])
@@ -525,13 +538,32 @@ export class PlaybackHighlighter {
 		}
 
 		if (topY == null) {
-			topY = posY - fs * 1.5
-			botY = posY + fs * 10
+			if (systemGeometry && systemGeometry[0]) {
+				topY = systemGeometry[0].topY - margin
+				botY = systemGeometry[0].bottomY + margin
+			} else {
+				topY = posY - fs * 2
+				botY = posY + fs * 8
+			}
 		}
 
 		ctx.save()
-		ctx.strokeStyle = CURSOR_COLOR
-		ctx.lineWidth = CURSOR_WIDTH
+
+		// 1. Soft translucent tracking band spanning the system
+		const bandWidth = Math.max(10, fs * 0.5)
+		ctx.fillStyle = 'rgba(37, 99, 235, 0.12)'
+		ctx.beginPath()
+		if (ctx.roundRect) {
+			ctx.roundRect(posX - bandWidth / 2, topY, bandWidth, botY - topY, 3)
+		} else {
+			ctx.rect(posX - bandWidth / 2, topY, bandWidth, botY - topY)
+		}
+		ctx.fill()
+
+		// 2. Main vertical cursor bar line
+		ctx.strokeStyle = '#2563eb'
+		ctx.lineWidth = 2.5
+		ctx.lineCap = 'round'
 		ctx.beginPath()
 		ctx.moveTo(posX, topY)
 		ctx.lineTo(posX, botY)
@@ -573,14 +605,30 @@ export class PlaybackHighlighter {
 		const t = (time - a.time) / dt
 
 		// Cross-system boundary detection:
-		// When a and b belong to different systems, cleanly switch systems at t = 0.5.
+		// When a and b belong to different systems, smoothly travel to the end of system a,
+		// then cleanly switch to system b at the start of the next note.
 		const isCrossSystem = (a.sysIdx != null && b.sysIdx != null && a.sysIdx !== b.sysIdx)
 			|| b.x < a.x - getFontSize() * 2
 
 		if (isCrossSystem) {
-			return t < 0.5
-				? { x: a.x, y: a.y, sysIdx: a.sysIdx }
-				: { x: b.x, y: b.y, sysIdx: b.sysIdx }
+			const sg = window._systemGeometry
+			const sysA = (a.sysIdx != null && sg) ? sg[a.sysIdx] : null
+			const endX = sysA ? (sysA.endX - 4) : (a.x + getFontSize() * 2)
+
+			if (t < 0.92) {
+				const localT = t / 0.92
+				return {
+					x: a.x + (endX - a.x) * localT,
+					y: a.y,
+					sysIdx: a.sysIdx,
+				}
+			} else {
+				return {
+					x: b.x,
+					y: b.y,
+					sysIdx: b.sysIdx,
+				}
+			}
 		}
 
 		return {
@@ -763,16 +811,18 @@ export class PlaybackHighlighter {
 
 		if (layoutMode === 'wrap' || layoutMode === 'page') {
 			// Wrap and page modes both stack systems/pages vertically — scroll
-			// vertically to keep the active system visible. (Only "scroll" mode
-			// lays the score out horizontally.)
-			const screenY = pos.y * zoom
+			// vertically to keep the active system visible based on system center.
+			const sg = window._systemGeometry
+			const sys = (pos.sysIdx != null && sg) ? sg[pos.sysIdx] : null
+			const systemCenterY = sys ? (sys.topY + sys.bottomY) / 2 : pos.y
+			const screenY = systemCenterY * zoom
 			const viewTop = scoreElm.scrollTop
 			const viewHeight = scoreElm.clientHeight
 			const margin = viewHeight * 0.25
 
 			if (screenY < viewTop + margin || screenY > viewTop + viewHeight - margin) {
 				scoreElm.scrollTo({
-					top: screenY - viewHeight * 0.35,
+					top: Math.max(0, screenY - viewHeight * 0.4),
 					behavior: 'smooth',
 				})
 			}

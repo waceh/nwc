@@ -492,37 +492,92 @@ if (autoScrollBtn) {
 	}
 }
 
-// Solo staff selector
-const soloSelect = document.getElementById('solo_staff')
+// Part selector (checkboxes: 1, 2, 3, 4, 5...)
+const partSelectorGroup = document.getElementById('part_selector_group')
+const partsAllBtn = document.getElementById('parts_all_btn')
+const partCheckboxContainer = document.getElementById('part_checkbox_container')
 
-function updateSoloStaffOptions(data) {
-	if (!soloSelect) return
-	// Clear existing options (keep "All")
-	soloSelect.innerHTML = '<option value="all">전체 파트</option>'
-	const staves = data?.score?.staves
-	if (!staves) return
-	for (let i = 0; i < staves.length; i++) {
-		const opt = document.createElement('option')
-		opt.value = String(i)
-		const name = staves[i].staff_name || staves[i].staff_label || `Staff ${i + 1}`
-		opt.textContent = `${i + 1}: ${name}`
-		soloSelect.appendChild(opt)
-	}
-	// Restore selection (clear solo if staves changed)
-	soloSelect.value = 'all'
+async function applyPartSelection() {
+	if (!partCheckboxContainer) return
+	const checkboxes = partCheckboxContainer.querySelectorAll('input[type="checkbox"]')
 	playback.clearSoloMute()
+	let anyUnchecked = false
+	checkboxes.forEach((cb) => {
+		const staffIndex = parseInt(cb.dataset.staffIndex, 10)
+		const label = cb.closest('label')
+		if (cb.checked) {
+			if (label) label.style.opacity = '1'
+		} else {
+			if (label) label.style.opacity = '0.45'
+			playback.setMute(staffIndex, true)
+			anyUnchecked = true
+		}
+	})
+
+	const allChecked = !anyUnchecked
+	if (partsAllBtn) {
+		partsAllBtn.style.color = allChecked ? 'var(--text)' : 'var(--text-dim)'
+		partsAllBtn.title = allChecked ? '전체 파트 선택 해제' : '전체 파트 선택'
+	}
+
+	await playback._reloadFiltered()
+	highlighter.setNoteEvents(playback.getFilteredNoteEvents())
 }
 
-if (soloSelect) {
-	soloSelect.onchange = async () => {
-		const val = soloSelect.value
-		playback.clearSoloMute()
-		if (val !== 'all') {
-			playback.setSolo(parseInt(val, 10), true)
+function updatePartCheckboxes(data) {
+	if (!partCheckboxContainer) return
+	partCheckboxContainer.innerHTML = ''
+	const staves = data?.score?.staves
+	if (!staves || staves.length === 0) {
+		if (partSelectorGroup) partSelectorGroup.style.display = 'none'
+		return
+	}
+	if (partSelectorGroup) partSelectorGroup.style.display = 'inline-flex'
+
+	playback.clearSoloMute()
+
+	for (let i = 0; i < staves.length; i++) {
+		const staffNum = i + 1
+		const staffName = staves[i].staff_name || staves[i].staff_label || `Staff ${staffNum}`
+
+		const label = document.createElement('label')
+		label.className = 'part-checkbox-label'
+		label.title = `${staffNum}: ${staffName}`
+
+		const cb = document.createElement('input')
+		cb.type = 'checkbox'
+		cb.checked = true
+		cb.dataset.staffIndex = String(i)
+		cb.onchange = async () => {
+			await applyPartSelection()
 		}
-		// Re-filter and reload if we have notes loaded
-		await playback._reloadFiltered()
-		highlighter.setNoteEvents(playback.getFilteredNoteEvents())
+
+		const textSpan = document.createElement('span')
+		textSpan.textContent = String(staffNum)
+
+		label.appendChild(cb)
+		label.appendChild(textSpan)
+		partCheckboxContainer.appendChild(label)
+	}
+
+	if (partsAllBtn) {
+		partsAllBtn.style.color = 'var(--text)'
+		partsAllBtn.title = '전체 파트 선택 해제'
+	}
+}
+
+if (partsAllBtn) {
+	partsAllBtn.onclick = async () => {
+		const checkboxes = partCheckboxContainer?.querySelectorAll('input[type="checkbox"]') || []
+		if (checkboxes.length === 0) return
+		const allChecked = Array.from(checkboxes).every(cb => cb.checked)
+		const targetState = !allChecked
+		checkboxes.forEach(cb => {
+			cb.checked = targetState
+			const label = cb.closest('label')
+			if (label) label.style.opacity = targetState ? '1' : '0.45'
+		})
+		await applyPartSelection()
 	}
 }
 
@@ -660,11 +715,54 @@ const rerender = () => {
 	}
 }
 
-window.exportLilypond = exportLilypond
+function updateScoreInfoBanner(info) {
+	const banner = document.getElementById('score_info_banner')
+	const titleEl = document.getElementById('score_info_title')
+	const authorEl = document.getElementById('score_info_author')
+	const dividerEl = document.getElementById('score_info_divider')
+	if (!banner || !titleEl) return
+
+	const title = info?.title?.trim()
+	const author = info?.author?.trim()
+
+	if (title || author) {
+		titleEl.textContent = title || '(제목 없음)'
+		if (author) {
+			authorEl.textContent = author
+			authorEl.style.display = ''
+			if (dividerEl) dividerEl.style.display = ''
+		} else {
+			authorEl.textContent = ''
+			authorEl.style.display = 'none'
+			if (dividerEl) dividerEl.style.display = 'none'
+		}
+		banner.style.display = 'flex'
+	} else {
+		banner.style.display = 'none'
+	}
+}
 
 function setDataAndRender(_data) {
+	// Stop existing playback & clear keyboard when loading a new score
+	if (playback) {
+		playback.stop()
+		highlighter.stop()
+		pianoKeyboard.clear()
+		if (progressBar) progressBar.value = 0
+		if (timeLabel) timeLabel.textContent = formatTime(0) + ' / ' + formatTime(0)
+	}
+
+	// Adapt default font size for multi-staff scores or explicit StaffSize in PgSetup
+	const pgStaffSize = parseInt(_data?.score?.PgSetup?.StaffSize, 10)
+	if (pgStaffSize && pgStaffSize <= 16) {
+		setFontSize(18)
+	} else if (_data?.score?.staves?.length >= 5) {
+		setFontSize(18)
+	}
+
 	scoreManager.setData(_data)
-	updateSoloStaffOptions(_data)
+	updatePartCheckboxes(_data)
+	updateScoreInfoBanner(_data?.info)
 	rerender()
 	// New score — force the next play to (re)load it instead of resuming
 	// stale scheduler state from whatever was loaded before.
@@ -710,6 +808,8 @@ function processData(payload, filename) {
 window.rerender = rerender
 window.processData = processData
 window.setDataAndRender = setDataAndRender
+window.playback = playback
+window.highlighter = highlighter
 
 const PARSER_STORAGE_KEY = 'nwc_use_new_parser'
 
@@ -1136,8 +1236,12 @@ if (storedPageView) {
 const storedZoomFit = localStorage.getItem(ZOOM_FIT_STORAGE_KEY)
 if (storedZoomFit === 'width' || storedZoomFit === 'height') {
 	setZoomFitMode(storedZoomFit)
-	updateFitButtonsUI()
+} else if (storedZoomFit === 'none') {
+	setZoomFitMode('none')
+} else {
+	setZoomFitMode('width')
 }
+updateFitButtonsUI()
 updateLayoutUI()
 
 // ---- Size buttons ----

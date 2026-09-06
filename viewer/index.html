@@ -355,6 +355,116 @@
 				background: #4338ca !important;
 				border-color: #4f46e5 !important;
 			}
+
+			/* Part (Staff) Checkboxes */
+			.part-selector-group {
+				display: inline-flex;
+				align-items: center;
+				gap: 5px;
+				padding: 2px 6px;
+				border-radius: var(--radius);
+				background: rgba(125, 125, 125, 0.12);
+				border: 1px solid var(--border);
+			}
+
+			.part-title-label {
+				font-size: 11px;
+				font-weight: 600;
+				color: var(--text-dim);
+				user-select: none;
+			}
+
+			.parts-all-btn {
+				padding: 1px 5px !important;
+				font-size: 10px !important;
+				font-weight: 600;
+				border-radius: 3px !important;
+				line-height: 1.2;
+				background: var(--surface);
+				border: 1px solid var(--border);
+				color: var(--text-dim);
+			}
+
+			.parts-all-btn:hover {
+				background: var(--surface-hover);
+				color: var(--text);
+			}
+
+			.part-checkbox-container {
+				display: inline-flex;
+				align-items: center;
+				gap: 4px;
+			}
+
+			.part-checkbox-label {
+				display: inline-flex;
+				align-items: center;
+				gap: 2px;
+				font-size: 11px;
+				font-weight: 600;
+				color: var(--text);
+				cursor: pointer;
+				user-select: none;
+				padding: 1px 4px;
+				border-radius: 3px;
+				background: rgba(255, 255, 255, 0.04);
+				border: 1px solid transparent;
+				transition: background 0.15s, border-color 0.15s;
+			}
+
+			.part-checkbox-label:hover {
+				background: rgba(255, 255, 255, 0.1);
+				border-color: var(--border);
+			}
+
+			.part-checkbox-label input[type="checkbox"] {
+				cursor: pointer;
+				margin: 0;
+				width: 12px;
+				height: 12px;
+				accent-color: var(--primary, #6366f1);
+			}
+
+			/* Score Title & Composer Banner (별도 칸) */
+			.score-info-banner {
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				gap: 6px;
+				padding: 2px 12px;
+				background: rgba(255, 255, 255, 0.05);
+				border: 1px solid var(--border, #2a2a38);
+				border-radius: 10px;
+				font-size: 11px;
+				color: var(--text, #e8e8f0);
+				user-select: none;
+				flex-shrink: 0;
+				max-width: fit-content;
+				margin: 3px auto;
+				line-height: 1.4;
+			}
+
+			.score-info-icon {
+				font-size: 11px;
+				opacity: 0.8;
+			}
+
+			.score-info-title {
+				font-weight: 600;
+				font-size: 11px;
+				color: #fff;
+				letter-spacing: -0.01em;
+			}
+
+			.score-info-divider {
+				color: var(--text-dim, #888);
+				font-size: 10px;
+			}
+
+			.score-info-author {
+				font-size: 11px;
+				color: #aaa;
+			}
 		</style>
 
 		<div id="container">
@@ -390,9 +500,11 @@
 								style="width: 70px;" />
 							<span id="volume_label" style="min-width: 32px; text-align: center; color: var(--text-dim);">8%</span>
 						</label>
-						<select id="solo_staff" class="menu-extra" title="특정 파트만 재생">
-							<option value="all">전체 파트</option>
-						</select>
+						<div id="part_selector_group" class="part-selector-group menu-extra" title="재생할 파트(줄 번호) 선택">
+							<span class="part-title-label">파트</span>
+							<button id="parts_all_btn" type="button" class="parts-all-btn" title="전체 파트 선택/해제">전체</button>
+							<div id="part_checkbox_container" class="part-checkbox-container"></div>
+						</div>
 						<!-- Octave Control Buttons -->
 						<div class="octave-control-group" title="재생 옥타브 조절 (음 높이 변경)" style="display: inline-flex; align-items: center; background: rgba(125,125,125,0.15); border: 1px solid var(--border-color, #ccc); border-radius: 4px; padding: 1px 4px; gap: 4px;">
 							<span style="font-size: 11px; font-weight: 600; color: var(--text-dim);">옥타브</span>
@@ -447,7 +559,7 @@
 							oninput="onZoomSliderInput(parseFloat(this.value))"
 							style="width: 80px;" />
 						<span id="zoom_label" style="font-size: 11px; min-width: 36px; text-align: center; color: var(--text-dim);">100%</span>
-						<button id="fit_width_btn" title="화면 너비에 맞추기" style="font-size: 11px; padding: 2px 6px;">W</button>
+						<button id="fit_width_btn" class="active" title="화면 너비에 맞추기" style="font-size: 11px; padding: 2px 6px;">W</button>
 						<button id="fit_height_btn" title="화면 높이에 맞추기" style="font-size: 11px; padding: 2px 6px;">H</button>
 					</div>
 
@@ -456,6 +568,14 @@
 						<button id="fullscreen_toggle" title="전체보기 (악보만 표시)">전체보기</button>
 						<button id="menu_simple_toggle" title="메뉴 간략히 (주요 컨트롤만 표시)">메뉴 간략히</button>
 					</div>
+				</div>
+
+				<!-- Score Title & Composer Info Banner (별도 칸) -->
+				<div id="score_info_banner" class="score-info-banner" style="display: none;">
+					<span class="score-info-icon">🎼</span>
+					<span id="score_info_title" class="score-info-title"></span>
+					<span id="score_info_divider" class="score-info-divider">·</span>
+					<span id="score_info_author" class="score-info-author"></span>
 				</div>
 			</div>
 
@@ -494,9 +614,14 @@
 			scoreElm.style.cursor = 'pointer'
 
 			var downx, downy, scrollLeft, scrollTop
+			function mousedrag(e) {
+				scoreElm.scrollLeft = scrollLeft + (downx - e.clientX)
+				scoreElm.scrollTop  = scrollTop  + (downy - e.clientY)
+			}
+
 			scoreElm.addEventListener('mousedown', (e) => {
-				downx = e.x
-				downy = e.y
+				downx = e.clientX
+				downy = e.clientY
 				scrollLeft = scoreElm.scrollLeft
 				scrollTop = scoreElm.scrollTop
 				window.addEventListener('mousemove', mousedrag)
@@ -504,16 +629,11 @@
 
 				e.preventDefault()
 
-				window.addEventListener('mouseup', (e) => {
+				window.addEventListener('mouseup', () => {
 					window.removeEventListener('mousemove', mousedrag)
 					scoreElm.style.cursor = 'pointer'
-				})
+				}, { once: true })
 			})
-
-			function mousedrag(e) {
-				scoreElm.scrollLeft += downx - e.x
-				scoreElm.scrollTop += downy - e.y
-			}
 
 			// ---- Zoom handler (transform-based, no re-layout) ----
 

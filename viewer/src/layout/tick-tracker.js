@@ -48,28 +48,37 @@ class TickTracker {
 	/**
 	 * Register a barline's positions for dual-purpose alignment:
 	 * - barlineTicks[T] = where the barline LINE was drawn (pre-gap).
-	 *   Only the FIRST barline at a given time sets this, so that matching
-	 *   barlines on other staves align with the first (not extra) barline.
+	 *   Tracks the widest position across staves for matching barlines.
 	 * - maxTicks[T] = post-gap cursor position, so notes on other staves
 	 *   are pushed past the barline gap.
 	 */
 	addBarline(token, drawnX, postGapX) {
-		const key = token.tabValue
-		// Only register the first barline position at this time value.
-		// Extra barlines on the same staff at the same time advance the
-		// cursor (creating visual space) but don't shift the alignment
-		// target for matching barlines on other staves.
-		if (!(key in this.barlineTicks)) {
+		const key = token.barIndex != null ? ('bar_' + token.barIndex) : token.tabValue
+		if (!(key in this.barlineTicks) || drawnX > this.barlineTicks[key]) {
 			this.barlineTicks[key] = drawnX
 		}
-		// Always update maxTicks with the latest post-gap position so
-		// notes on every staff land past all barline gaps at this time.
 		const which = this.maxTicks[key]
 		if (!which || postGapX > which.staveX) {
 			this.maxTicks[key] = {
 				cursor: null,
 				staveX: postGapX,
 				token: token,
+			}
+		}
+
+		// Also register by tabValue for note alignment across staves
+		if (token.tabValue != null && token.tabValue !== key) {
+			const tKey = token.tabValue
+			if (!(tKey in this.barlineTicks) || drawnX > this.barlineTicks[tKey]) {
+				this.barlineTicks[tKey] = drawnX
+			}
+			const tWhich = this.maxTicks[tKey]
+			if (!tWhich || postGapX > tWhich.staveX) {
+				this.maxTicks[tKey] = {
+					cursor: null,
+					staveX: postGapX,
+					token: token,
+				}
 			}
 		}
 	}
@@ -99,17 +108,27 @@ class TickTracker {
 	/**
 	 * Align a barline using barlineTicks (matching barlines on other
 	 * staves) with maxTicks as fallback (position after preceding notes).
+	 * Prefers measure-based key (token.barIndex) so barlines align across
+	 * all staves regardless of floating-point tab differences.
 	 */
 	alignBarline(token, cursor) {
 		let moveX = cursor.staveX
-		const key = token.tabValue
+		const key = token.barIndex != null ? ('bar_' + token.barIndex) : token.tabValue
 		if (key && key in this.barlineTicks) {
-			// Snap to the first matching barline across staves
 			moveX = Math.max(moveX, this.barlineTicks[key])
 		} else if (key && key in this.maxTicks) {
-			// No barline registered yet — position after preceding notes
 			moveX = Math.max(moveX, this.maxTicks[key].staveX)
 		}
+
+		if (token.tabValue != null && token.tabValue !== key) {
+			const tKey = token.tabValue
+			if (tKey in this.barlineTicks) {
+				moveX = Math.max(moveX, this.barlineTicks[tKey])
+			} else if (tKey in this.maxTicks) {
+				moveX = Math.max(moveX, this.maxTicks[tKey].staveX)
+			}
+		}
+
 		cursor.staveX = moveX
 	}
 }

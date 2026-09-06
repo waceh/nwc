@@ -29,6 +29,17 @@ function getLayoutMode() {
 	return layoutMode
 }
 
+// Default measures per system when no explicit system breaks (SysBreak) exist.
+let measuresPerSystem = 4
+
+function setMeasuresPerSystem(n) {
+	if (typeof n === 'number' && n > 0) measuresPerSystem = Math.round(n)
+}
+
+function getMeasuresPerSystem() {
+	return measuresPerSystem
+}
+
 // Page size for 'page' layout mode (dimensions at 96 DPI). Fixed to A4.
 const PAGE_SIZE = { width: 794, height: 1123, label: 'A4 (210×297mm)' }
 
@@ -183,8 +194,8 @@ function getPageViewMode() {
 }
 
 // Zoom fit mode — 'none', 'width', or 'height'.
-// Disengaged when the user manually drags the zoom slider.
-let zoomFitMode = 'none'
+// Default to 'width' (W button active). Disengaged when the user manually drags the zoom slider.
+let zoomFitMode = 'width'
 
 function setZoomFitMode(mode) {
 	if (mode === 'none' || mode === 'width' || mode === 'height') zoomFitMode = mode
@@ -249,6 +260,7 @@ export {
 	setPageViewMode, getPageViewMode, PAGE_VIEW_MODES,
 	setZoomFitMode, getZoomFitMode,
 	setLayoutMode, getLayoutMode,
+	setMeasuresPerSystem, getMeasuresPerSystem,
 	setPageOrientation, getPageOrientation,
 	getPageDimensions, getPageMargins,
 	MUSIC_FONTS, setMusicFont, getMusicFont, getMusicFontPath, getMusicTextFamily,

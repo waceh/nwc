@@ -153,7 +153,7 @@ SightReader.prototype.read = function (staves) {
 				for (var li = 0; li < firstLine.length; li++) {
 					var raw = firstLine[li]
 					var trimmed = raw.replace(/^[\s\r]+/, '')
-					if (trimmed.startsWith('-')) {
+					if (trimmed.startsWith('-') && trimmed.length > 1) {
 						// Continuation syllable: mark previous token with trailing hyphen
 						// and strip the leading hyphen from this syllable.
 						if (this.lyricsToken.length > 0) {
@@ -164,15 +164,22 @@ SightReader.prototype.read = function (staves) {
 						}
 						trimmed = trimmed.slice(1)
 					}
-					this.lyricsToken.push(trimmed)
+					if (trimmed.length > 0) {
+						this.lyricsToken.push(trimmed)
+					}
 				}
 			} else {
 				// Old parser: raw string that needs tokenizing
 				this.lyricsToken = tokenizeLyrics(firstLine)
 			}
 		}
+		var headerPast = false
 		staff.tokens.forEach((token) => {
 			var type = token.type
+
+			if (type === 'Note' || type === 'Rest' || type === 'Chord' || type === 'Barline') {
+				headerPast = true
+			}
 
 			// absolute time value when note should be played
 			token.tickValue = this.tickCounter.value()
@@ -196,7 +203,10 @@ SightReader.prototype.read = function (staves) {
 					this.tabCounter.add(token.durValue).simplify()
 				}
 			} else {
-				if (isTabbable(token)) {
+				// Only initial header tokens (before first note/rest/barline) advance tabCounter
+				// to reserve space for clef/key/time signatures.
+				// Mid-stream clef/key changes have zero duration and must NOT advance tabCounter.
+				if (isTabbable(token) && !headerPast) {
 					this.tmpFraction.set(1, 4)
 					this.tabCounter.add(this.tmpFraction).simplify()
 				}
@@ -406,7 +416,7 @@ SightReader.prototype.Chord = function (token) {
 			// Exactly one shift() per note — see the Note handler below for
 			// why this must not keep skipping past multiple markers.
 			var syllable = this.lyricsToken.shift()
-			if (syllable && !/^[-_]$/.test(syllable)) {
+			if (syllable && syllable !== '_') {
 				token.text = syllable
 			}
 		}
@@ -520,7 +530,7 @@ SightReader.prototype.Note = function (token) {
 			// more than one token here would pull every later syllable in
 			// the line onto earlier notes than they belong on.
 			var syllable = this.lyricsToken.shift()
-			if (syllable && !/^[-_]$/.test(syllable)) {
+			if (syllable && syllable !== '_') {
 				token.text = syllable
 			}
 		}
