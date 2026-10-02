@@ -356,6 +356,27 @@
 				border-color: #4f46e5 !important;
 			}
 
+			#sample_scores_dialog {
+				background: var(--surface);
+				color: var(--text);
+				border: 1px solid var(--border);
+				border-radius: 10px;
+				padding: 24px;
+				width: min(420px, calc(100vw - 64px));
+			}
+			#sample_scores_dialog::backdrop { background: rgba(0, 0, 0, 0.65); }
+			#sample_scores_dialog h2 { margin: 0 0 16px; font-size: 18px; }
+			#sample_scores_dialog p { color: var(--text-dim); }
+			#sample_scores_open[hidden] { display: none !important; }
+			#app_version { touch-action: manipulation; }
+			#sample_scores_list { list-style: none; padding: 0; margin: 16px 0; }
+			#sample_scores_list li + li { margin-top: 8px; }
+			#sample_scores_list button { width: 100%; text-align: left; padding: 12px; white-space: normal; overflow-wrap: anywhere; }
+			#sample_scores_list button:disabled { opacity: 0.6; cursor: wait; }
+			#sample_scores_dialog button:focus-visible, #app_version:focus-visible, #sample_scores_open:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+			#sample_scores_status { min-height: 1.5em; }
+			.sample-dialog-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
+
 			/* Part (Staff) Checkboxes */
 			.part-selector-group {
 				display: inline-flex;
@@ -514,10 +535,11 @@
 						</div>
 						<button id="autoscroll_toggle" class="active menu-extra" title="재생 중 자동 스크롤">자동 스크롤</button>
 						<!-- 메뉴 보기 버튼 (맨 우측에 배치) -->
+						<button id="sample_scores_open" type="button" hidden title="샘플 악보 열기">샘플악보</button>
 						<button id="menu_full_toggle" class="menu-simple-only" title="전체 메뉴 보기">메뉴 보기</button>
 					</div>
 					<div class="toolbar-group" style="margin-left: auto; border-left: none;">
-						<span id="app_version" title="Version" style="font-size: 11px; font-weight: 600; color: var(--text-dim, #888); padding: 2px 6px; border-radius: 4px; background: rgba(125,125,125,0.12); border: 1px solid var(--border, rgba(125,125,125,0.2)); user-select: none; letter-spacing: 0.02em;">v1.0.820</span>
+						<button id="app_version" type="button" title="Version" style="font-size: 11px; font-weight: 600; color: var(--text-dim, #888); padding: 2px 6px; border-radius: 4px; background: rgba(125,125,125,0.12); border: 1px solid var(--border, rgba(125,125,125,0.2)); user-select: none; letter-spacing: 0.02em;">v1.0.820</button>
 					</div>
 				</div>
 
@@ -589,6 +611,14 @@
 				브라우저에서 직접 처리 — 파일이 서버로 전송되지 않습니다 · v1.0.820
 			</div>
 		</div>
+
+		<dialog id="sample_scores_dialog" aria-labelledby="sample_scores_heading">
+			<h2 id="sample_scores_heading">샘플 악보</h2>
+			<p>악보를 선택하면 뷰어에서 바로 열립니다.</p>
+			<ul id="sample_scores_list"></ul>
+			<p id="sample_scores_status" role="status" aria-live="polite"></p>
+			<div class="sample-dialog-actions"><button id="sample_scores_close" type="button">닫기</button></div>
+		</dialog>
 
 		<!-- vendor dependencies -->
 		<script src="vendor/inflate.min.js"></script>

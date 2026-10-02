@@ -13,6 +13,7 @@ import { PlaybackController } from './audio.js'
 import { PlaybackHighlighter } from './playback-highlight.js'
 import { PianoKeyboard } from './piano-keyboard.js'
 import { parseMusicXML, isMusicXMLFile } from './musicxml-import.js'
+import { initSampleScores } from './sample-scores.js'
 
 /**********************
  *
@@ -1390,6 +1391,12 @@ if (storedProp !== null) setDurationProportionality(parseFloat(storedProp))
 updateProportionalityUI()
 
 // ---- Initial score: a file handed off from the converter page, or blank ----
+
+initSampleScores((payload, filename) => {
+	playback.stop()
+	pianoKeyboard.clear()
+	processData(payload, filename)
+})
 
 if (!loadPendingFile()) {
 	setDataAndRender(blank)
