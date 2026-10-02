@@ -13,6 +13,7 @@ function picker(fetchScore) {
 		addEventListener(type, handler) { this.events[type] = handler }
 		append(child) { this.children.push(child) }
 		focus() { this.focused = true }
+		blur() { this.focused = false }
 		showModal() { this.open = true }
 		close() { this.open = false; this.events.close?.() }
 	}
@@ -20,17 +21,33 @@ function picker(fetchScore) {
 		'sample_scores_list', 'sample_scores_status', 'sample_scores_close'].map(id => [id, new Element()]))
 	elements.sample_scores_open.hidden = true
 	let now = 0
+	let plays = 0
 	const opened = []
+	const documentEvents = {}
 	const context = {
-		document: { getElementById: id => elements[id], createElement: () => new Element() },
+		document: { getElementById: id => elements[id], createElement: () => new Element(),
+			body: {}, addEventListener: (type, handler) => { documentEvents[type] = handler } },
 		performance: { now: () => now }, URL, AbortController,
 		fetch: fetchScore, console: { error() {} },
+		handlePlayToggleGesture: () => { plays++ },
 	}
 	vm.createContext(context)
 	vm.runInContext(fs.readFileSync(moduleURL, 'utf8').replace('export function', 'function')
 		.replace('import.meta.url', JSON.stringify(moduleURL.href)), context)
 	context.initSampleScores((buffer, name) => opened.push({ buffer, name }))
-	return { elements, opened, clickVersion(time) { now = time; elements.app_version.events.click() } }
+	const main = fs.readFileSync(new URL('../viewer/src/main.js', import.meta.url), 'utf8')
+	const start = main.indexOf("document.addEventListener('keydown'", main.indexOf('// Spacebar play/pause'))
+	vm.runInContext(main.slice(start, main.indexOf('\n})', start) + 3), context)
+	return { elements, opened, plays: () => plays,
+		pressSpace(target) {
+			context.document.activeElement = target
+			let stopped = false, prevented = false
+			const event = { code: 'Space', stopPropagation() { stopped = true }, preventDefault() { prevented = true } }
+			target.events.keydown?.(event)
+			if (!stopped) documentEvents.keydown(event)
+			if (!prevented) target.events.click?.()
+		},
+		clickVersion(time) { now = time; elements.app_version.events.click() } }
 }
 
 test('sample button is initially hidden and requires five version clicks within three seconds', () => {
@@ -52,7 +69,7 @@ test('both sample choices load the exact packaged NWC and close the picker', asy
 	} }))
 	const buttons = p.elements.sample_scores_list.children.map(li => li.children[0])
 	const hashes = {
-		"One Call Away - Dad's Harmony.nwc": '6cb901f5366e893d16ede3b581f50984780d968167ce43e75b33a329929ada99',
+		"One Call Away - Dad's Harmony.nwc": '4580733cd2774f834055480caf565771abcf481eaafe5d5a4143ee7d13e9f15d',
 		'the blenders-you.nwc': '1dfee3685b27c1cfbc4b00aa356a33b9e6e47e9d70aa6ad10bd57bf52116dd7f',
 	}
 	assert.equal(buttons.length, 2)
@@ -89,4 +106,22 @@ test('closing during a fetch cancels loading without opening a score', async () 
 	assert.equal(p.opened.length, 0)
 	assert.equal(button.disabled, false)
 	assert.equal(p.elements.sample_scores_status.textContent, '')
+})
+
+test('Space after loading a sample starts playback instead of reopening the list', async () => {
+	const p = picker(async () => ({ ok: true, arrayBuffer: async () => new ArrayBuffer(1) }))
+	p.elements.sample_scores_open.events.click()
+	await p.elements.sample_scores_list.children[0].children[0].events.click()
+	assert.equal(p.elements.sample_scores_open.focused, true)
+	p.pressSpace(p.elements.sample_scores_open)
+	assert.equal(p.plays(), 1)
+	assert.equal(p.elements.sample_scores_dialog.open, false)
+	assert.equal(p.elements.sample_scores_open.focused, false)
+})
+
+test('Space remains local to the open sample dialog', () => {
+	const p = picker()
+	p.elements.sample_scores_open.events.click()
+	p.pressSpace(p.elements.sample_scores_dialog)
+	assert.equal(p.plays(), 0)
 })

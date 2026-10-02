@@ -52,6 +52,7 @@ function parseLyricText(raw) {
 
 class NWCTxtObj {
   constructor(type, staff) { this.type = type; this.staff = staff; this.children = []; }
+  getLyricSyllable() { return this.lyricSyllable || 0; }
 }
 
 class ClefTxtObj extends NWCTxtObj {
@@ -488,15 +489,43 @@ export function parseNWCTxt(text) {
         
         if (obj) {
           obj.parse(fields);
+          const opts = fields.find(f => f.startsWith('Opts:'));
+          const lyric = opts && fieldValue(opts).split(',').find(o => o.startsWith('Lyric='));
+          obj.lyricSyllable = lyric === 'Lyric=Always' ? 1 : lyric === 'Lyric=Never' ? 2 : 0;
+          for (const child of obj.children) child.lyricSyllable = obj.lyricSyllable;
           staff.objects.push(obj);
         }
       }
     }
   }
 
-  for (const s of file.staffs) resolveTies(s.objects);
+  for (const s of file.staffs) {
+    resolveTies(s.objects);
+    resolveSlurs(s.objects);
+  }
 
   return file;
+}
+
+// NWCTXT Dur:Slur marks an outgoing connection, not a complete start/end
+// state. Mark the receiving note too, so it shares the previous syllable.
+// Chord children must carry the same state because the viewer adapts them.
+function resolveSlurs(objects) {
+  let pendingSlur = false;
+  for (const obj of objects) {
+    if (obj.type === ObjType.Rest) {
+      pendingSlur = false;
+      continue;
+    }
+    if (obj.type !== ObjType.Note && obj.type !== ObjType.NoteCM) continue;
+    const outgoing = !!(obj.getAttributes() & NoteAttr.SlurBeg);
+    const state = pendingSlur
+      ? (outgoing ? NoteAttr.SlurMid : NoteAttr.SlurEnd)
+      : (outgoing ? NoteAttr.SlurBeg : 0);
+    obj.attr = (obj.attr & ~NoteAttr.SlurMask) | state;
+    for (const child of obj.children) child.attr = (child.attr & ~NoteAttr.SlurMask) | state;
+    pendingSlur = outgoing;
+  }
 }
 
 // A tie's "^" marker (captured as NoteAttr.TieBeg above) only appears on the

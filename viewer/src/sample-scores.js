@@ -28,8 +28,8 @@ export function initSampleScores(openScore) {
 			trigger.focus()
 		}
 	})
-	version.addEventListener('keydown', event => event.stopPropagation())
-	trigger.addEventListener('keydown', event => event.stopPropagation())
+	// Outside the dialog, Space must reach the global play/pause shortcut.
+	// Enter still activates these buttons normally.
 
 	for (const name of SAMPLE_NAMES) {
 		const item = document.createElement('li')

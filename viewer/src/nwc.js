@@ -578,7 +578,19 @@ function convert275Tokens(reader) {
 		})
 		stave.tokens = stave.tokens.map(mapTokens)
 		resolveTies(stave.tokens)
+		resolveTextSlurs(stave.tokens)
 	})
+}
+
+function resolveTextSlurs(tokens) {
+	let pendingSlur = false
+	for (const token of tokens) {
+		if (token.type === 'Rest') { pendingSlur = false; continue }
+		if (token.type !== 'Note' && token.type !== 'Chord') continue
+		const outgoing = !!(token.slur & 1)
+		token.slur = pendingSlur ? (outgoing ? 3 : 2) : (outgoing ? 1 : 0)
+		pendingSlur = outgoing
+	}
 }
 
 /**
@@ -706,6 +718,7 @@ function parseDur(dur) {
 	return {
 		duration,
 		dots,
+		slur: parts.includes('Slur') ? 1 : 0,
 	}
 }
 
@@ -713,6 +726,7 @@ function parseDur(dur) {
 function mapTokens(token) {
 	var type = token.type
 	parseOpts(token)
+	token.lyricSyllable = token.Lyric === 'Always' ? 1 : token.Lyric === 'Never' ? 2 : 0
 
 	switch (type) {
 		case 'Clef':

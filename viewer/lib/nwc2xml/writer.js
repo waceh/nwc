@@ -208,7 +208,7 @@ function writeStaff(w, staff, measureNum) {
       case ObjType.Note:
         needNewMeasure = true;
         writeNote(w, obj, div, clefShift, measureAlter, staff.lyrics, lyricIdx);
-        if (canHaveLyric(obj.getAttributes())) lyricIdx++;
+        if (canHaveLyric(obj.getAttributes(), obj.getLyricSyllable?.())) lyricIdx++;
         break;
         
       case ObjType.Rest:
@@ -225,7 +225,7 @@ function writeStaff(w, staff, measureNum) {
             first = false;
           }
         }
-        if (!first && canHaveLyric(obj.children[0]?.getAttributes?.())) lyricIdx++;
+        if (!first && canHaveLyric(obj.children[0]?.getAttributes?.(), obj.getLyricSyllable?.())) lyricIdx++;
         break;
         
       case ObjType.RestCM:
@@ -367,7 +367,7 @@ function writeNote(w, obj, div, clefShift, measureAlter, lyrics, lyricIdx, isCho
   }
   
   // Lyrics
-  if (lyrics.length && lyricIdx >= 0 && canHaveLyric(na)) {
+  if (lyrics.length && lyricIdx >= 0 && canHaveLyric(na, obj.getLyricSyllable?.())) {
     lyrics.forEach((lyric, li) => {
       if (lyricIdx < lyric.length) {
         let text = lyric[lyricIdx].trim();
@@ -450,7 +450,9 @@ function writeEndingBar(w, style, curEnding) {
   }
 }
 
-function canHaveLyric(na) {
+function canHaveLyric(na, lyricSyllable = 0) {
+  if (lyricSyllable === 1) return true;
+  if (lyricSyllable === 2) return false;
   if ((na & NoteAttr.SlurMask) === NoteAttr.SlurEnd || (na & NoteAttr.SlurMask) === NoteAttr.SlurMid) return false;
   if (na & NoteAttr.TieEnd) return false;
   return true;
