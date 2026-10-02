@@ -96,8 +96,10 @@ function getMaxTick(staves) {
 		for (const tok of staff.tokens) {
 			if (tok.tickValue != null) {
 				let end = tok.tickValue
-				if (tok.durValue) {
-					end += typeof tok.durValue === 'number' ? tok.durValue : tok.durValue.value()
+				const voices = tok.type === 'Chord' ? [tok, ...(tok.notes || [])] : [tok]
+				for (const voice of voices) {
+					const duration = voice.durValue
+					if (duration) end = Math.max(end, tok.tickValue + (typeof duration === 'number' ? duration : duration.value()))
 				}
 				if (end > maxTick) maxTick = end
 			}

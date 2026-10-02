@@ -266,6 +266,7 @@ SightReader.prototype.reset = function () {
 	this.lastTimeSignature = null
 
 	this.pitches = {}
+	this.tiedPitches = new Map()
 	this.keySig = {}
 	this.setKeySignature(['C'])
 }
@@ -427,6 +428,9 @@ SightReader.prototype.Chord = function (token) {
 	// Resolve pitch and accidentals for each note in the chord
 	if (token.notes) {
 		token.notes.forEach((note) => {
+			const timing = { duration: note.duration || token.duration, dots: note.dots ?? token.dots, triplet: note.triplet ?? token.triplet }
+			this._handle_duration(timing)
+			note.durValue = timing.durValue
 			if (note.position !== undefined) {
 				var pitch = note.position + this.offset
 				note.name = NOTE_NAMES[circularIndex(pitch)]
@@ -441,6 +445,8 @@ SightReader.prototype.Chord = function (token) {
 				if (accidental) {
 					computedAccidental = accidental
 					this.pitches[pitch] = accidental
+				} else if (note.tieEnd && this.tiedPitches.has(pitch)) {
+					computedAccidental = this.tiedPitches.get(pitch)
 				} else if (this.pitches[pitch] !== undefined) {
 					computedAccidental = this.pitches[pitch]
 				} else {
@@ -450,6 +456,8 @@ SightReader.prototype.Chord = function (token) {
 					}
 				}
 				note.accidentalValue = computedAccidental
+				this.tiedPitches.delete(pitch)
+				if (note.tie) this.tiedPitches.set(pitch, computedAccidental)
 			}
 		})
 	}
@@ -490,6 +498,8 @@ SightReader.prototype.Note = function (token) {
 		computedAccidental = accidental
 		// set running pitch to accidental
 		this.pitches[pitch] = accidental
+	} else if (token.tieEnd && this.tiedPitches.has(pitch)) {
+		computedAccidental = this.tiedPitches.get(pitch)
 	} else if (this.pitches[pitch] !== undefined) {
 		// takes the running value from pitch
 		computedAccidental = this.pitches[pitch]
@@ -502,6 +512,8 @@ SightReader.prototype.Note = function (token) {
 	}
 
 	token.accidentalValue = computedAccidental
+	this.tiedPitches.delete(pitch)
+	if (token.tie) this.tiedPitches.set(pitch, computedAccidental)
 
 	// --- Lyric assignment (NWC rules) ---
 	// Per NWC spec:

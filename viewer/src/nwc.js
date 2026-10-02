@@ -4,6 +4,7 @@ import { TokenParsers } from './nwc_parser.js'
 import { parseNWC } from '../lib/nwc-parser.js'
 import { unescapeNwcString } from '../lib/nwc2xml/nwctxt-parser.js'
 import { decodeString as decodeBytes, decodeNwcText } from '../lib/nwc2xml/reader.js'
+import { staffProperties } from '../lib/nwc2xml/text-properties.js'
 import { sharps, flats } from './interpreter.js'
 
 var should_debug = false
@@ -154,7 +155,8 @@ function adaptNoteAttrs(obj) {
 		tie: (attr & 0x20000) ? 1 : 0,
 		tieEnd: (attr & 0x40000) ? 1 : 0,
 		slur: (attr >> 11) & 3,
-		beam: (attr >> 9) & 3,
+		beam: [0, 1, 3, 2][(attr >> 9) & 3],
+		voice: obj.voice || 1,
 		stem: (attr >> 15) & 3,
 		triplet: (dt >> 2) & 3,
 		staccato: (attr & 0x004) ? 1 : 0,
@@ -404,10 +406,12 @@ function convertFromNewParser(nwcFile) {
 		},
 		score: {
 			allowLayering: nwcFile.allowLayering !== false,
+			PgSetup: nwcFile.pgSetup || {},
 			staves: nwcFile.staffs.map(function(staff) {
 				return {
 					staff_name: staff.name || '',
 					staff_label: staff.label || '',
+					visible: staff.visible !== false,
 					group_name: staff.group || '',
 					channel: staff.channel || 0,
 				patchName: staff.patchName ?? 0,
@@ -527,12 +531,19 @@ function parseNwc275(reader, nwctext) {
 		reader.token('type', type)
 
 		for (var j = 2; j < parts.length; j++) {
-			var kv = parts[j].split(':')
-			obj[kv[0]] = kv[1]
-			reader.token(kv[0], kv[1])
+			const colon = parts[j].indexOf(':')
+			const key = parts[j].slice(0, colon), value = parts[j].slice(colon + 1)
+			obj[key] = value
+			reader.token(key, value)
 		}
 
 		reader.token('next')
+		const staff = reader.data.score.staves.at(-1)
+		if (type === 'AddStaff') {
+			staff.staff_name = unquoteNwcString(obj.Name || '')
+			staff.staff_label = unquoteNwcString(obj.Label || '')
+			staff.group_name = unquoteNwcString(obj.Group || '')
+		} else if (type === 'StaffProperties' && staff) Object.assign(staff, staffProperties(parts.slice(2)))
 		// console.log(i, parts);
 	}
 }
@@ -569,41 +580,43 @@ function resolveTextSlurs(tokens) {
 	}
 }
 
-/**
- * NWCTXT (v2.75 text format) marks a tie with a trailing "^" on the note's
- * Pos field — parsed into `token.tied` by getPos() below — but that's a
- * different field from the `tie`/`tieEnd` booleans that interpreter.js
- * (skips lyric-syllable assignment on tie continuations) and audio.js
- * (merges tied-note durations) actually read; those two are only set by
- * the *binary* NWC decoder's bitflags. Without this, every tied note in a
- * text-format file was treated as a fresh, separate note: it got its own
- * re-attack in playback, and — since interpreter.js didn't know to skip
- * it — consumed a lyric syllable it shouldn't have, pushing every later
- * syllable in the line onto the wrong (earlier) note.
- *
- * Mirrors the binary format's semantics: `tie` = this note ties forward
- * into the next one, `tieEnd` = this note is the receiving end of a tie
- * from the previous one. Matches audio.js's findNextTiedInSegment(), which
- * also just takes "the next Note/Chord" without checking pitch.
- */
+// Resolve ties independently for each pitch in a NWCTXT chord.
 function resolveTies(tokens) {
-	var pendingTie = false
-	for (var i = 0; i < tokens.length; i++) {
-		var tok = tokens[i]
-		if (tok.type !== 'Note' && tok.type !== 'Chord') continue
-
-		if (pendingTie) {
-			tok.tieEnd = 1
-			pendingTie = false
+	const pending = new Map()
+	const duration = note => (1 / (note.duration || 4)) * (note.dots === 2 ? 7 / 4 : note.dots === 1 ? 3 / 2 : 1) * (note.triplet ? 2 / 3 : 1)
+	let time = 0, offset = 34, key = {}
+	const running = new Map()
+	const delta = accidental => ({ '#': 1, b: -1, n: 0, x: 2, v: -2 }[accidental] || 0)
+	for (const token of tokens) {
+		if (token.type === 'Clef') {
+			offset = { treble: 34, bass: 22, alto: 28, tenor: 26, percussion: 22 }[token.clef] ?? 34
+			offset += token.octave === 'Octave Up' ? 7 : token.octave === 'Octave Down' ? -7 : 0
 		}
-
-		if (tok.type === 'Note' && tok.tied === '^') {
-			tok.tie = 1
-			pendingTie = true
-		} else if (tok.type === 'Chord' && tok.notes && tok.notes.some((n) => n.tied === '^')) {
-			tok.tie = 1
-			pendingTie = true
+		if (token.type === 'KeySignature') {
+			key = Object.fromEntries((sharps[token.key] || flats[token.key] || []).map(acc => [acc[0].toUpperCase(), delta(acc[1])]))
 		}
+		if (token.type === 'Barline') running.clear()
+		if (token.type === 'Rest') { time += duration(token); continue }
+		if (token.type !== 'Note' && token.type !== 'Chord') continue
+		const notes = token.type === 'Chord' ? token.notes : [token]
+		for (const note of notes) {
+			note.tie = note.tied === '^' ? 1 : 0
+			const pitch = offset + note.position
+			const previous = pending.get(pitch)
+			const letter = 'CDEFGAB'[((pitch % 7) + 7) % 7]
+			let alter = note.accidental ? delta(note.accidental) : running.get(pitch) ?? key[letter] ?? 0
+			note.tieEnd = previous && Math.abs(previous.until - time) < 1e-8
+				&& (!note.accidental || previous.alter === alter) ? 1 : 0
+			if (note.tieEnd && !note.accidental) alter = previous.alter
+			if (note.accidental) running.set(pitch, alter)
+			pending.delete(pitch)
+			if (note.tie) pending.set(pitch, { alter, until: time + duration(note) })
+		}
+		if (token.type === 'Chord') {
+			token.tie = notes.some(n => n.tie) ? 1 : 0
+			token.tieEnd = notes.some(n => n.tieEnd) ? 1 : 0
+		}
+		time += duration(token.rest || token)
 	}
 }
 
@@ -680,14 +693,7 @@ function parseDur(dur) {
 	var parts = dur.split(',')
 
 	var duration = durs[parts[0]]
-	var dots = 0
-	if (parts[1]) {
-		if (parts[1] === 'Dotted') {
-			dots++
-		} else if (parts[1] === 'DblDotted') {
-			dots += 2
-		}
-	}
+	var dots = parts.includes('DblDotted') ? 2 : parts.includes('Dotted') ? 1 : 0
 
 	if (!duration) console.log('!!', dur)
 
@@ -695,6 +701,8 @@ function parseDur(dur) {
 		duration,
 		dots,
 		slur: parts.includes('Slur') ? 1 : 0,
+		triplet: parts.includes('Triplet=First') ? 1 : parts.includes('Triplet=End') ? 3 : parts.includes('Triplet') ? 2 : 0,
+		grace: parts.includes('Grace') ? 1 : 0,
 	}
 }
 
@@ -702,6 +710,10 @@ function parseDur(dur) {
 function mapTokens(token) {
 	var type = token.type
 	parseOpts(token)
+	token.beam = { First: 1, Middle: 2, End: 3 }[token.Beam] || (token.Opts?.split(',').includes('Beam') ? 2 : 0)
+	for (const flag of ['Staccato', 'Accent', 'Tenuto', 'Marcato', 'Staccatissimo', 'Fermata']) {
+		if (token.Opts?.split(',').includes(flag)) token[flag.toLowerCase()] = 1
+	}
 	token.lyricSyllable = token.Lyric === 'Always' ? 1 : token.Lyric === 'Never' ? 2 : 0
 
 	switch (type) {
@@ -736,8 +748,17 @@ function mapTokens(token) {
 			token.notes.forEach(note => Object.assign(note, parseDur(token.Dur2), { tie: note.tied === '^' ? 1 : 0 }))
 			break
 		case 'Chord':
-			Object.assign(token, { notes: getChordPos(token.Pos) })
+			token.notes = getChordPos(token.Pos).map(note => ({ ...note, ...parseDur(token.Dur), voice: 1, stem: token.Stem === 'Up' ? 1 : token.Stem === 'Down' ? 2 : 0 }))
+			if (token.Pos2) token.notes.push(...getChordPos(token.Pos2).map(note => ({ ...note, ...parseDur(token.Dur2), voice: 2, stem: token.Stem === 'Up' ? 2 : token.Stem === 'Down' ? 1 : 0 })))
 			Object.assign(token, parseDur(token.Dur))
+			break
+		case 'Ending':
+			token.repeat = 0
+			for (const number of (token.Endings || '').split(',')) {
+				const n = Number(number)
+				if (Number.isInteger(n) && n >= 1 && n <= 7) token.repeat |= 1 << (n - 1)
+				if (number === 'D') token.repeat |= 0x80
+			}
 			break
 		case 'Note':
 			Object.assign(token, getPos(token.Pos))
@@ -748,7 +769,7 @@ function mapTokens(token) {
 			token.type = 'Barline'
 			// Map nwctxt barline style names to numeric style codes
 			var barStyles = { Single: 0, Double: 1, SectionOpen: 2, SectionClose: 3, LocalRepeatOpen: 4, LocalRepeatClose: 5, MasterRepeatOpen: 6, MasterRepeatClose: 7 }
-			if (token.Style) token.barline = barStyles[token.Style] || 0
+			if (token.Style) token.barline = barStyles[token.Style.replace(/\s/g, '')] || 0
 			if (token.SysBreak === 'Y') token.systemBreak = true
 			break
 		case 'Rest':

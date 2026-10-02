@@ -1,4 +1,5 @@
 // NWCTXT Parser for NWC 2.75+ files
+import { staffProperties } from './text-properties.js';
 import { NWCFile, NWCStaff } from './parser.js';
 import { ObjType, Accidental, NoteAttr, DurationType } from './constants.js';
 
@@ -114,7 +115,7 @@ class BarLineTxtObj extends NWCTxtObj {
   parse(fields) {
     const styles = { Single: 0, Double: 1, SectionOpen: 2, SectionClose: 3, LocalRepeatOpen: 4, LocalRepeatClose: 5, MasterRepeatOpen: 6, MasterRepeatClose: 7 };
     for (const f of fields) {
-      if (f.startsWith('Style:')) this.style = styles[fieldValue(f)] || 0;
+      if (f.startsWith('Style:')) this.style = styles[fieldValue(f).replace(/\s/g, '')] || 0;
       if (f.startsWith('Repeat:')) this.repeatCount = parseInt(fieldValue(f)) || 2;
       if (f.startsWith('SysBreak:') && fieldValue(f) === 'Y') this._sysBreak = true;
     }
@@ -126,7 +127,7 @@ class BarLineTxtObj extends NWCTxtObj {
 const DUR_MAP = { Whole: 0, Half: 1, '4th': 2, '8th': 3, '16th': 4, '32nd': 5, '64th': 6 };
 
 class NoteTxtObj extends NWCTxtObj {
-  constructor(s) { super(ObjType.Note, s); this.duration = 2; this.pos = 0; this.accidental = Accidental.Normal; this.dots = 0; this.attr = 0; }
+  constructor(s) { super(ObjType.Note, s); this.duration = 2; this.pos = 0; this.accidental = Accidental.Normal; this.dots = 0; this.attr = 0; this.durationAttr = 0; }
   parse(fields) {
     for (const f of fields) {
       if (f.startsWith('Dur:')) {
@@ -135,9 +136,9 @@ class NoteTxtObj extends NWCTxtObj {
         for (const p of parts) {
           if (p === 'Dotted') this.dots = 1;
           if (p === 'DblDotted') this.dots = 2;
-          if (p === 'Triplet=First') this.attr |= DurationType.TriStart;
-          else if (p === 'Triplet=End') this.attr |= DurationType.TriStop;
-          else if (p === 'Triplet') this.attr |= DurationType.TriCont;
+          if (p === 'Triplet=First') this.durationAttr |= DurationType.TriStart;
+          else if (p === 'Triplet=End') this.durationAttr |= DurationType.TriStop;
+          else if (p === 'Triplet') this.durationAttr |= DurationType.TriCont;
           if (p === 'Slur') this.attr |= NoteAttr.SlurBeg;
           if (p === 'Grace') this.attr |= NoteAttr.Grace;
         }
@@ -171,6 +172,7 @@ class NoteTxtObj extends NWCTxtObj {
         if (opts.includes('Fermata')) this.attr |= NoteAttr.Fermata;
         if (opts.includes('Beam=First')) this.attr |= NoteAttr.BeamBeg;
         if (opts.includes('Beam=End')) this.attr |= NoteAttr.BeamEnd;
+        if (opts.includes('Beam=Middle') || opts.split(',').includes('Beam')) this.attr |= NoteAttr.BeamMid;
         if (opts.includes('Stem=Up')) this.attr |= NoteAttr.StemUp;
         if (opts.includes('Stem=Down')) this.attr |= NoteAttr.StemDown;
       }
@@ -178,7 +180,7 @@ class NoteTxtObj extends NWCTxtObj {
   }
   getDuration() { return this.duration; }
   getDurationType() {
-    let dt = this.attr & DurationType.Triplet;
+    let dt = this.durationAttr & DurationType.Triplet;
     if (this.dots === 2) dt |= DurationType.DotDot;
     else if (this.dots === 1) dt |= DurationType.Dot;
     return dt;
@@ -195,7 +197,7 @@ class NoteTxtObj extends NWCTxtObj {
     let d = 1 << this.duration;
     if (this.dots === 2) d <<= 2;
     else if (this.dots === 1) d <<= 1;
-    if (this.attr & DurationType.Triplet) d = (d % 2) ? d * 3 : (d / 2) * 3;
+    if (this.durationAttr & DurationType.Triplet) d = (d % 2) ? d * 3 : (d / 2) * 3;
     return d;
   }
   getAccidental() { return this.accidental; }
@@ -211,7 +213,7 @@ class NoteTxtObj extends NWCTxtObj {
       alter = [1, -1, 0, 2, -2][acc];
       measureAlter[stepIdx] = alter;
     } else {
-      alter = measureAlter[stepIdx];
+      alter = this.tiedAlter ?? measureAlter[stepIdx];
     }
     return { octave, step, alter };
   }
@@ -262,6 +264,7 @@ class RestTxtObj extends NWCTxtObj {
 
 // RestChord advances by Dur while its sounding voice uses Dur2 / Pos2.
 class RestChordTxtObj extends RestTxtObj {
+  getDivision() { return this.rest.getDivision(); }
   getDurationType() { return this.rest.getDurationType(); }
   getAttributes() { return this.attr; }
   constructor(s) { super(s); this.type = ObjType.RestCM; }
@@ -280,66 +283,39 @@ class RestChordTxtObj extends RestTxtObj {
 }
 
 class ChordTxtObj extends NWCTxtObj {
-  constructor(s) { super(ObjType.NoteCM, s); this.duration = 2; this.dots = 0; this.attr = 0; this.pos = 0; this.accidental = Accidental.Normal; this.children = []; this.count = 0; }
+  constructor(s) { super(ObjType.NoteCM, s); this.duration = 2; this.dots = 0; this.attr = 0; this.durationAttr = 0; this.pos = 0; this.accidental = Accidental.Normal; this.children = []; this.count = 0; }
   parse(fields) {
-    const positions = [];
-    for (const f of fields) {
-      if (f.startsWith('Dur:')) {
-        const parts = fieldValue(f).split(',');
-        this.duration = DUR_MAP[parts[0]] ?? 2;
-        for (const p of parts) {
-          if (p === 'Dotted') this.dots = 1;
-          if (p === 'DblDotted') this.dots = 2;
-          if (p === 'Triplet=First') this.attr |= DurationType.TriStart;
-          else if (p === 'Triplet=End') this.attr |= DurationType.TriStop;
-          else if (p === 'Triplet') this.attr |= DurationType.TriCont;
-          if (p === 'Slur') this.attr |= NoteAttr.SlurBeg;
+    const common = fields.filter(f => !/^(Dur2?|Pos2?):/.test(f));
+    for (const voice of [1, 2]) {
+      const suffix = voice === 1 ? '' : '2';
+      const positions = fields.find(f => f.startsWith(`Pos${suffix}:`));
+      if (!positions) continue;
+      const duration = fields.find(f => f.startsWith(`Dur${suffix}:`)) || 'Dur:4th';
+      for (const position of fieldValue(positions).split(',')) {
+        if (!/([#bnxv]?)(-?\d+)/.test(position)) continue;
+        const child = new NoteTxtObj(this.staff);
+        child.parse([...common, `Dur:${fieldValue(duration)}`, `Pos:${position}`]);
+        child.voice = voice;
+        if (voice === 2) {
+          const stem = child.attr & NoteAttr.StemMask;
+          child.attr = (child.attr & ~(NoteAttr.StemMask | NoteAttr.BeamMask))
+            | (stem === NoteAttr.StemUp ? NoteAttr.StemDown : stem === NoteAttr.StemDown ? NoteAttr.StemUp : 0);
         }
-      }
-      if (f.startsWith('Pos:')) {
-        for (const pos of fieldValue(f).split(',')) {
-          const m = pos.match(/([#bnxv]?)(-?\d+)/);
-          if (m) {
-            const acc = { '#': Accidental.Sharp, 'b': Accidental.Flat, 'n': Accidental.Natural, 'x': Accidental.SharpSharp, 'v': Accidental.FlatFlat };
-            // Negate to match binary parser convention (adapter will negate back).
-            // A trailing "^" on this position marks that particular chord note
-            // as tied forward — see NoteTxtObj.parse() for why this matters.
-            positions.push({ pos: -parseInt(m[2]), acc: acc[m[1]] ?? Accidental.Normal, tie: pos.endsWith('^') });
-          }
-        }
-      }
-      if (f.startsWith('Opts:')) {
-        const opts = fieldValue(f);
-        if (opts.includes('Tie')) this.attr |= NoteAttr.TieBeg;
-        if (opts.includes('Stem=Up')) this.attr |= NoteAttr.StemUp;
-        if (opts.includes('Stem=Down')) this.attr |= NoteAttr.StemDown;
+        this.children.push(child);
       }
     }
-    if (positions.length > 0) {
-      this.pos = positions[0].pos;
-      this.accidental = positions[0].acc;
+    this.count = this.children.length;
+    const first = this.children[0];
+    if (first) {
+      this.duration = first.duration; this.dots = first.dots; this.durationAttr = first.durationAttr;
+      this.pos = first.pos; this.accidental = first.accidental;
+      this.attr = first.attr;
+      if (this.children.some(n => n.attr & NoteAttr.TieBeg)) this.attr |= NoteAttr.TieBeg;
     }
-    // Include ALL notes as children (matching binary parser where count = total notes)
-    this.count = positions.length;
-    for (let i = 0; i < positions.length; i++) {
-      const child = new NoteTxtObj(this.staff);
-      child.duration = this.duration;
-      child.pos = positions[i].pos;
-      child.accidental = positions[i].acc;
-      child.dots = this.dots;
-      // Each child gets the chord-wide flags (slur/stem/etc.) plus its own
-      // tie status — a chord note's tie is per-note, not shared with siblings.
-      child.attr = positions[i].tie ? (this.attr | NoteAttr.TieBeg) : this.attr;
-      this.children.push(child);
-    }
-    // Mark the chord itself as tie-starting if any child note ties, so the
-    // top-level tie resolution pass (which only walks staff.objects, not
-    // chord children) can propagate TieEnd onto the next object.
-    if (positions.some((p) => p.tie)) this.attr |= NoteAttr.TieBeg;
   }
   getDuration() { return this.duration; }
   getDurationType() {
-    let dt = this.attr & DurationType.Triplet;
+    let dt = this.durationAttr & DurationType.Triplet;
     if (this.dots === 2) dt |= DurationType.DotDot;
     else if (this.dots === 1) dt |= DurationType.Dot;
     return dt;
@@ -356,7 +332,7 @@ class ChordTxtObj extends NWCTxtObj {
     let d = 1 << this.duration;
     if (this.dots === 2) d <<= 2;
     else if (this.dots === 1) d <<= 1;
-    if (this.attr & DurationType.Triplet) d = (d % 2) ? d * 3 : (d / 2) * 3;
+    if (this.durationAttr & DurationType.Triplet) d = (d % 2) ? d * 3 : (d / 2) * 3;
     return d;
   }
   getAccidental() { return this.accidental; }
@@ -427,9 +403,11 @@ class EndingTxtObj extends NWCTxtObj {
     for (const f of fields) {
       if (f.startsWith('Endings:')) {
         const e = fieldValue(f);
-        if (e.includes('1')) this.style |= 1;
-        if (e.includes('2')) this.style |= 2;
-        if (e.includes('3')) this.style |= 4;
+        for (const number of e.split(',')) {
+          const n = Number(number);
+          if (Number.isInteger(n) && n >= 1 && n <= 7) this.style |= 1 << (n - 1);
+          if (number === 'D') this.style |= 0x80;
+        }
       }
     }
   }
@@ -468,17 +446,20 @@ export function parseNWCTxt(text) {
           if (f.startsWith('Copyright1:')) file.copyright1 = quotedFieldValue(f);
           if (f.startsWith('Copyright2:')) file.copyright2 = quotedFieldValue(f);
         }
+      } else if (type === 'PgSetup') {
+        file.pgSetup = Object.fromEntries(fields.map(f => [f.slice(0, f.indexOf(':')), fieldValue(f)]));
+        file.measureStart = Number(file.pgSetup.StartingBar) || 1;
+        file.allowLayering = file.pgSetup.AllowLayering !== 'N';
       } else if (type === 'AddStaff') {
         staff = new NWCStaff(file);
         file.staffs.push(staff);
         for (const f of fields) {
           if (f.startsWith('Name:')) staff.name = quotedFieldValue(f);
+          if (f.startsWith('Label:')) staff.label = quotedFieldValue(f);
           if (f.startsWith('Group:')) staff.group = quotedFieldValue(f);
         }
       } else if (type === 'StaffProperties' && staff) {
-        for (const f of fields) {
-          if (f.startsWith('Channel:')) staff.channel = parseInt(fieldValue(f)) || 0;
-        }
+        Object.assign(staff, staffProperties(fields));
       } else if (type === 'StaffInstrument' && staff) {
         for (const f of fields) {
           if (f.startsWith('Patch:')) staff.patchName = parseInt(fieldValue(f)) || 0;
@@ -520,7 +501,7 @@ export function parseNWCTxt(text) {
   }
 
   for (const s of file.staffs) {
-    resolveTies(s.objects);
+    resolveTies(s.objects, s.getDivisions());
     resolveSlurs(s.objects);
   }
 
@@ -548,32 +529,43 @@ function resolveSlurs(objects) {
   }
 }
 
-// A tie's "^" marker (captured as NoteAttr.TieBeg above) only appears on the
-// note where the tie *starts* — NWCTXT never marks the receiving note. Find,
-// for every tie start, the next Note/Chord object and flag it as the tie's
-// end, mirroring src/nwc.js's resolveTies() for the legacy binary-format
-// parser. Without this, a tied-into note reads as a fresh, unconnected note:
-// downstream consumers that skip lyric-syllable assignment and duration
-// merging on tie continuations (interpreter.js, audio.js) never see it as
-// one, so it wrongly consumes a lyric syllable and drifts every later
-// syllable in the line onto the wrong (earlier) note.
-function resolveTies(objects) {
-  let pendingTie = false;
+// Match receiving notes by staff position, keeping independent chord voices.
+function resolveTies(objects, divisions) {
+  const pending = new Map();
+  let time = 0, offset = 34, keyAlter = new Array(7).fill(0);
+  const running = new Map();
   for (const obj of objects) {
-    if (obj.type !== ObjType.Note && obj.type !== ObjType.NoteCM && obj.type !== ObjType.RestCM) continue;
-
-    if (pendingTie) {
-      if ((obj.type === ObjType.NoteCM || obj.type === ObjType.RestCM) && obj.children.length > 0) {
-        // The adapter derives the chord token's top-level tie/pitch fields
-        // from the *first* child (see nwc.js's adaptObject case 10), so the
-        // tie-end flag has to land there to be visible.
-        obj.children[0].attr |= NoteAttr.TieEnd;
-      } else {
-        obj.attr |= NoteAttr.TieEnd;
-      }
-      pendingTie = false;
+    if (obj.type === ObjType.Clef) {
+      offset = [34, 22, 28, 26, 22][obj.clefType] ?? 34;
+      offset += obj.octaveShift === 1 ? 7 : obj.octaveShift === 2 ? -7 : 0;
     }
-
-    if (obj.getAttributes() & NoteAttr.TieBeg) pendingTie = true;
+    if (obj.type === ObjType.KeySig) keyAlter = obj.getChromAlter();
+    if (obj.type === ObjType.BarLine) running.clear();
+    if (![ObjType.Note, ObjType.NoteCM, ObjType.RestCM].includes(obj.type)) {
+      if (obj.getDurationTicks) time += obj.getDurationTicks(divisions);
+      continue;
+    }
+    const notes = obj.type === ObjType.Note ? [obj] : obj.children;
+    for (const note of notes) {
+      const pitch = offset - note.pos;
+      const previous = pending.get(pitch);
+      const explicit = note.accidental !== Accidental.Normal;
+      const letter = 'CDEFGAB'[((pitch % 7) + 7) % 7];
+      let alter = explicit ? [1, -1, 0, 2, -2][note.accidental]
+        : running.get(pitch) ?? keyAlter[letter.charCodeAt(0) - 65];
+      if (previous && previous.until === time && (!explicit || previous.alter === alter)) {
+        note.attr |= NoteAttr.TieEnd;
+        if (!explicit) { alter = previous.alter; note.tiedAlter = alter; }
+      }
+      if (explicit) running.set(pitch, alter);
+      pending.delete(pitch);
+      if (note.attr & NoteAttr.TieBeg) pending.set(pitch, { alter, until: time + note.getDurationTicks(divisions) });
+    }
+    if (obj.type !== ObjType.Note) {
+      obj.attr = (obj.attr & ~(NoteAttr.TieBeg | NoteAttr.TieEnd))
+        | (notes.some(n => n.attr & NoteAttr.TieBeg) ? NoteAttr.TieBeg : 0)
+        | (notes.some(n => n.attr & NoteAttr.TieEnd) ? NoteAttr.TieEnd : 0);
+    }
+    time += obj.getDurationTicks(divisions);
   }
 }

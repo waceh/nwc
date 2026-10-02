@@ -120,94 +120,58 @@ export function buildNoteEvents(data, octaveShift = 0) {
 				}
 			}
 
-			// Track which tokens have been consumed by tie extension within this segment
-			const tieConsumed = new Set()
-
+			// Treat each sounding pitch independently: split voices have their
+			// own duration, and a partial tie must not consume its entire chord.
+			const atoms = []
 			for (let ti = 0; ti < tokens.length; ti++) {
 				const tok = tokens[ti]
-				if (tok.tickValue == null) continue
-				if (tok.tickValue < seg.startTick) continue
-				if (tok.tickValue >= seg.endTick) break
-
-				// Update velocity when encountering dynamic markings
-				if (tok.type === 'Dynamic' && tok.dynamic) {
-					velocity = DYNAMIC_VELOCITY[tok.dynamic] ?? velocity
-					continue
-				}
-
+				if (tok.tickValue == null || tok.tickValue < seg.startTick || tok.tickValue >= seg.endTick) continue
+				if (tok.type === 'Dynamic' && tok.dynamic) velocity = DYNAMIC_VELOCITY[tok.dynamic] ?? velocity
 				if (tok.type !== 'Note' && tok.type !== 'Chord') continue
-
-				// Skip if already consumed by tie extension from an earlier note
-				if (tieConsumed.has(ti)) continue
-
-				const tickStart = tok.tickValue
-				const durValue = tok.durValue
-				if (durValue == null) continue
-
-				// Accumulate duration through tied notes WITHIN this segment.
-				// Ties don't cross segment boundaries (repeat boundaries break ties).
-				let totalDur = typeof durValue === 'number' ? durValue : durValue.value()
-				if (tok.tie) {
-					let next = findNextTiedInSegment(tokens, ti, seg.endTick)
-					while (next !== -1) {
-						tieConsumed.add(next)
-						const nt = tokens[next]
-						if (nt.durValue) {
-							totalDur += typeof nt.durValue === 'number' ? nt.durValue : nt.durValue.value()
-						}
-						if (nt.tie) {
-							next = findNextTiedInSegment(tokens, next, seg.endTick)
-						} else {
-							next = -1
-						}
-					}
-				}
-
-				// Map score ticks to playback seconds via the segment offset
-				const noteSec = ticksToSeconds(tickStart, tempoMap)
-				const startSec = playbackOffset + (noteSec - segStartSec)
-				const noteEndTick = tickStart + totalDur
-				const endSec = playbackOffset + (ticksToSeconds(Math.min(noteEndTick, seg.endTick), tempoMap) - segStartSec)
-				const durationSec = endSec - startSec
-
-				if (tok.type === 'Note') {
-					if (tok.name == null) continue
-					const rawMidi = toMidi(tok.name, tok.octave, tok.accidentalValue) + transpose
-					const midi = Math.max(0, Math.min(127, rawMidi))
-					notes.push({
-						midi,
-						time: startSec,
-						duration: durationSec,
-						velocity,
-						channel,
-						staffIndex: si,
-						tokenIndex: ti,
-						token: tok,
-					})
-				} else if (tok.type === 'Chord' && tok.notes) {
-					// Each child note has its own resolved accidentalValue from the
-					// interpreter.  The parent chord token copies the first child's
-					// name/octave but NOT accidentalValue, so we must use child notes
-					// exclusively to get correct MIDI pitches.
-					for (const n of tok.notes) {
-						if (n.name == null) continue
-						if (n.tieEnd && !tok.tie) continue  // only skip tieEnd if not part of a new tie chain
-						const rawMidi = toMidi(n.name, n.octave, n.accidentalValue) + transpose
-						const midi = Math.max(0, Math.min(127, rawMidi))
-						notes.push({
-							midi,
-							time: startSec,
-							duration: durationSec,
-							velocity,
-							channel,
-							staffIndex: si,
-							tokenIndex: ti,
-							token: tok,
-							noteRef: n,
-						})
-					}
+				for (const note of tok.type === 'Chord' ? (tok.notes || []) : [tok]) {
+					if (note.name == null) continue
+					const value = note.durValue ?? tok.durValue
+					if (value == null) continue
+					const duration = typeof value === 'number' ? value : value.value()
+					const midi = Math.max(0, Math.min(127, toMidi(note.name, note.octave, note.accidentalValue) + transpose))
+					atoms.push({ tok, note, ti, tick: tok.tickValue, duration, midi, velocity })
 				}
 			}
+			const byPitch = new Map()
+			for (const atom of atoms) {
+				if (!byPitch.has(atom.midi)) byPitch.set(atom.midi, [])
+				byPitch.get(atom.midi).push(atom)
+			}
+			const consumed = new Set()
+			for (const atom of atoms) {
+				if (consumed.has(atom)) continue
+				let endTick = atom.tick + atom.duration
+				let last = atom
+				while (last.note.tie) {
+					const candidates = byPitch.get(atom.midi)
+					let lo = 0, hi = candidates.length
+					while (lo < hi) {
+						const mid = (lo + hi) >>> 1
+						if (candidates[mid].tick < endTick - 1e-8) lo = mid + 1
+						else hi = mid
+					}
+					let next
+					for (let index = lo; index < candidates.length && Math.abs(candidates[index].tick - endTick) < 1e-8; index++) {
+						const candidate = candidates[index]
+						if (candidate !== last && !consumed.has(candidate) && candidate.tick > last.tick) { next = candidate; break }
+					}
+					if (!next) break
+					consumed.add(next)
+					endTick = next.tick + next.duration
+					last = next
+				}
+				const startSec = playbackOffset + (ticksToSeconds(atom.tick, tempoMap) - segStartSec)
+				const endSec = playbackOffset + (ticksToSeconds(Math.min(endTick, seg.endTick), tempoMap) - segStartSec)
+				notes.push({ midi: atom.midi, time: startSec, duration: endSec - startSec,
+					velocity: atom.velocity, channel, staffIndex: si, tokenIndex: atom.ti, token: atom.tok,
+					...(atom.tok.type === 'Chord' ? { noteRef: atom.note } : {}) })
+			}
+
 		}
 
 		playbackOffset += segDuration
@@ -218,44 +182,6 @@ export function buildNoteEvents(data, octaveShift = 0) {
 
 	const duration = notes.reduce((mx, n) => Math.max(mx, n.time + n.duration), 0)
 	return { notes, duration, channels, segments }
-}
-
-// ── Tie merging helpers ────────────────────────────────────────────────────
-
-/**
- * Given a token index that has tie=1 (tie start), find the next token in the
- * same stave that is the tie continuation/end.
- */
-function findNextTied(tokens, idx) {
-	const tok = tokens[idx]
-	if (!tok.tie) return -1
-	// Walk forward looking for the next Note/Chord with tieEnd
-	for (let j = idx + 1; j < tokens.length; j++) {
-		const t = tokens[j]
-		if (t.type === 'Note' || t.type === 'Chord') {
-			if (t.tieEnd) return j
-			return -1 // next note but not a tie end — broken tie
-		}
-	}
-	return -1
-}
-
-/**
- * Like findNextTied, but constrains the search to within the segment's tick range.
- * Returns -1 if the next tied note is beyond segEndTick (tie broken at boundary).
- */
-function findNextTiedInSegment(tokens, idx, segEndTick) {
-	const tok = tokens[idx]
-	if (!tok.tie) return -1
-	for (let j = idx + 1; j < tokens.length; j++) {
-		const t = tokens[j]
-		if (t.type === 'Note' || t.type === 'Chord') {
-			if (t.tickValue >= segEndTick) return -1  // beyond segment
-			if (t.tieEnd) return j
-			return -1
-		}
-	}
-	return -1
 }
 
 // ── Tempo map ──────────────────────────────────────────────────────────────
@@ -451,8 +377,8 @@ export class PlaybackController {
 		const pos = this.currentTime
 		const filtered = this._filterNotes(this._allNotes)
 		this._scheduler.load({ notes: filtered })
+		this._scheduler.seek(pos)
 		if (wasPlaying) {
-			this._scheduler.seek(pos)
 			this._scheduler.play()
 		}
 	}

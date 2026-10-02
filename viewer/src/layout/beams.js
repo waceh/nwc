@@ -507,22 +507,28 @@ function layoutBeaming(_drawing, _data) {
 	const staves = data.score.staves
 	
 	staves.forEach((stave) => {
-		// Group beamable notes
-		const beamGroups = groupBeamableNotes(stave.tokens)
-		
-		// Only beam groups with 2+ notes
-		const actualBeamGroups = beamGroups.filter(group => group.length >= 2)
-		const beamedTokens = new Set(actualBeamGroups.flat())
-		
-		// Draw beam groups
-		actualBeamGroups.forEach(drawBeamGroup)
-		
-		// Draw individual stems/flags for non-beamed notes
-		stave.tokens.forEach(token => {
-			if (!beamedTokens.has(token)) {
-				handleBeamTokens(token)
+		const secondary = []
+		const tokens = stave.tokens.map(token => {
+			if (token.type !== 'Chord' || !token.notes?.length) return token
+			const voices = new Map()
+			for (const note of token.notes) {
+				const key = `${note.voice || 1}:${note.duration || token.duration}:${note.stem || token.stem || 0}`
+				if (!voices.has(key)) voices.set(key, [])
+				voices.get(key).push(note)
 			}
+			const groups = [...voices.values()].map((notes, index) => ({ ...token, notes,
+				duration: notes[0].duration || token.duration, dots: notes[0].dots ?? token.dots,
+				Stem: undefined, stem: notes[0].stem || token.stem,
+				beam: index === 0 ? token.beam : 0, drawingNoteHead: notes[0].drawingNoteHead }))
+			secondary.push(...groups.slice(1))
+			return groups[0]
 		})
+		const beamGroups = groupBeamableNotes(tokens).filter(group => group.length >= 2)
+		const beamed = new Set(beamGroups.flat())
+		beamGroups.forEach(drawBeamGroup)
+		for (const token of [...tokens, ...secondary]) {
+			if (!beamed.has(token)) handleBeamTokens(token)
+		}
 	})
 }
 

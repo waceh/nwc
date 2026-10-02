@@ -152,7 +152,7 @@ export class NoteObj extends NWCObj {
     if (this.attr1[0] & 0x10) na |= NoteAttr.TieBeg;
     if (this.attr1[0] & 0x08) na |= NoteAttr.TieEnd;
     if (this.attr1[0] & 0x02) na |= NoteAttr.Staccato;
-    na |= (this.data2[1] & 0x03) * NoteAttr.BeamBeg;
+    na |= [0, NoteAttr.BeamBeg, NoteAttr.BeamMid, NoteAttr.BeamEnd][this.data2[2] & 0x03];
     if (this.attr1[1] & 0x80) na |= (this.data2[1] & 0x40) ? NoteAttr.SlurDirDown : NoteAttr.SlurDirUp;
     if (this.attr1[1] & 0x40) na |= (this.attr2[0] & 0x08) ? NoteAttr.TieDirDown : NoteAttr.TieDirUp;
     na |= ((this.data2[1] & 0x30) >> 4) * NoteAttr.StemUp;

@@ -1403,8 +1403,9 @@ function score(dataOrContext) {
 	ctx.clearRect(0, 0, canvas.width, canvas.height)
 	window.drawing = drawing = new Drawing(ctx)
 
-	const staves = data.score.staves
+	const staves = data.score.staves.filter(staff => staff.visible !== false)
 	currentStaves = staves
+	currentStaffLabels = data.score.PgSetup?.StaffLabels
 	currentAllowLayering = data.score.allowLayering !== false
 	var extents = computeStaffExtents(staves)
 	buildStaffYMap(staves, data.score.allowLayering, extents)
@@ -2581,6 +2582,7 @@ function drawBracketsAndBraces(drawing, staves, yOffset, leftMarginOverride) {
  * Draw staff labels to the left of each visible stave.
  */
 function drawStaffLabels(drawing, staves, yOffset, leftMarginOverride) {
+	if (currentStaffLabels === 'None') return
 	var fs = getFontSize()
 	for (var li = 0; li < staves.length; li++) {
 		var label = staves[li].staff_label || ''
@@ -2687,6 +2689,7 @@ function sizeSpacerAndRender(canvas, canvasWidth, canvasHeight) {
 // Computed Y positions for each stave, respecting WithNextStaff flags.
 // Built once per score() call; consumed by getStaffY().
 var staffYMap = []
+var currentStaffLabels
 var currentStaves = [] // reference to current staves array for handleToken
 var currentAllowLayering = true // file-level allowLayering flag
 
@@ -3077,30 +3080,20 @@ function handleToken(token, tokenIndex, staveIndex, cursor) {
 				var chordStemUp = token.Stem === 'Up' || token.stem === 1 ? true :
 				                  token.Stem === 'Down' || token.stem === 2 ? false :
 				                  (chordTopPos + chordBotPos < 0)
-				for (var ni = 0; ni < sortedNotes.length; ni++) {
-					sortedNotes[ni]._chordOffsetX = 0
+				const voices = new Map()
+				for (const note of sortedNotes) {
+					note._chordOffsetX = 0
+					const key = `${note.voice || 1}:${note.stem || 0}`
+					if (!voices.has(key)) voices.set(key, [])
+					voices.get(key).push(note)
 				}
-				var displaced = false
-				var lastPos = undefined
-				var displacedDir = chordStemUp ? 1 : -1
-				// Stems up: walk bottom-to-top (ascending).
-				// Stems down: walk top-to-bottom (descending).
-				var start = chordStemUp ? 0 : sortedNotes.length - 1
-				var end = chordStemUp ? sortedNotes.length : -1
-				var step = chordStemUp ? 1 : -1
-				for (var ni = start; ni !== end; ni += step) {
-					var pos = sortedNotes[ni].position
-					if (lastPos !== undefined) {
-						var diff = Math.abs(pos - lastPos)
-						if (diff === 1) {
-							displaced = !displaced  // toggle for each second
-						} else {
-							displaced = false        // reset for larger intervals
-						}
-					}
-					lastPos = pos
-					if (displaced) {
-						sortedNotes[ni]._chordOffsetX = displacedDir
+				for (const notes of voices.values()) {
+					const stemUp = notes[0].stem === 1 ? true : notes[0].stem === 2 ? false : chordStemUp
+					let displaced = false, lastPos
+					for (const note of stemUp ? notes : [...notes].reverse()) {
+						displaced = lastPos !== undefined && Math.abs(note.position - lastPos) === 1 ? !displaced : false
+						lastPos = note.position
+						if (displaced) note._chordOffsetX = stemUp ? 1 : -1
 					}
 				}
 			}
@@ -3256,9 +3249,10 @@ function handleToken(token, tokenIndex, staveIndex, cursor) {
 			// token.repeat is a bitmask: bit 0 = ending 1, bit 1 = ending 2, etc.
 			// token.style controls the bracket appearance.
 			var endingNums = []
-			for (var ebi = 0; ebi < 8; ebi++) {
+			for (var ebi = 0; ebi < 7; ebi++) {
 				if (token.repeat & (1 << ebi)) endingNums.push(ebi + 1)
 			}
+			if (token.repeat & 0x80) endingNums.push('D')
 			var endingText = endingNums.join(', ') + '.'
 			// Style: 0 = open (no right hook), 1 = closed (right hook)
 			var endingClosed = token.style === 1

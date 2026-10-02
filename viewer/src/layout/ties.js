@@ -229,8 +229,8 @@ function layoutTies(_drawing, _data) {
 						position: child.position,
 						glyph: child.drawingNoteHead,
 						// Tie can be on the child note itself, or inherited from parent
-						tie: child.tie || token.tie,
-						tieEnd: child.tieEnd || token.tieEnd,
+						tie: child.tie ?? token.tie,
+						tieEnd: child.tieEnd ?? token.tieEnd,
 						// Slurs are on the parent chord, not individual notes
 						slur: token.slur,
 						token: token,
