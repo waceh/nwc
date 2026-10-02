@@ -390,6 +390,7 @@ playback.onEnd(() => {
 // space-bar resume. Reset to null in setDataAndRender() whenever the
 // score itself changes, so the next play still (re)loads fresh data.
 let _loadedPlaybackData = null
+let _pendingSeekTime = null
 
 async function togglePlayPause() {
 	if (playback.playing) {
@@ -400,6 +401,8 @@ async function togglePlayPause() {
 			await playback.load(data)
 			highlighter.setNoteEvents(playback.getFilteredNoteEvents())
 			_loadedPlaybackData = data
+			if (_pendingSeekTime != null) playback.seek(_pendingSeekTime)
+			_pendingSeekTime = null
 		}
 		await playback.play()
 	}
@@ -428,6 +431,7 @@ document.addEventListener('keydown', (e) => {
 })
 
 stopBtn.onclick = () => {
+	_pendingSeekTime = null
 	playback.stop()
 	highlighter.stop()
 	pianoKeyboard.clear()
@@ -474,7 +478,9 @@ if (highlightSelect) {
 
 		// Seek the playback engine and update the visual cursor
 		playback.seek(time)
-		highlighter.updateTime(time)
+		if (scoreManager.getData() !== _loadedPlaybackData) _pendingSeekTime = time
+		highlighter.seek(time)
+		timeLabel.textContent = formatTime(time) + ' / ' + formatTime(playback.duration)
 
 		// Update progress bar position
 		if (playback.duration > 0) {
@@ -639,6 +645,7 @@ progressBar.addEventListener('pointerup', () => {
 	_seeking = false
 	const t = parseFloat(progressBar.value) * playback.duration
 	playback.seek(t)
+	highlighter.seek(t)
 })
 progressBar.addEventListener('input', () => {
 	const t = parseFloat(progressBar.value) * playback.duration
@@ -767,6 +774,8 @@ function setDataAndRender(_data) {
 	// New score — force the next play to (re)load it instead of resuming
 	// stale scheduler state from whatever was loaded before.
 	_loadedPlaybackData = null
+	_pendingSeekTime = null
+	highlighter.stop()
 }
 
 function processData(payload, filename) {
@@ -824,7 +833,7 @@ function toggleParser() {
 	localStorage.setItem(PARSER_STORAGE_KEY, next)
 	updateParserButton()
 	if (window._lastPayload) {
-		processData(window._lastPayload)
+		processData(window._lastPayload, window.__currentFile)
 	}
 }
 

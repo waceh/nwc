@@ -18,18 +18,29 @@ class MidiClockProcessor extends AudioWorkletProcessor {
     this.speed = 1;
     this.lastNoteIdx = -1;
     this.lastCCIdx = -1;
+    this.activeNoteIndices = new Set();
+    this.noteOffs = [];
+    this.lastOffIdx = -1;
 
     this.port.onmessage = (e) => {
       const { type, data } = e.data;
       switch (type) {
         case 'load':
+          this.playing = false;
           this.notes = data.notes;
+          this.noteOffs = data.notes.map((note, index) => ({ index, time: note.time + (note.duration || 0), note })).sort((a, b) => a.time - b.time);
+          this.lastOffIdx = -1;
+          this.activeNoteIndices.clear();
           this.ccEvents = data.cc || [];
           this.lastNoteIdx = -1;
           this.lastCCIdx = -1;
           this.lapseFrames = 0;
           break;
         case 'play':
+          if (this.playing) break;
+          for (const index of this.activeNoteIndices) {
+            this.port.postMessage({ type: 'noteOn', note: this.notes[index] });
+          }
           this.playing = true;
           this.startFrame = currentFrame - this.lapseFrames / this.speed;
           break;
@@ -37,10 +48,15 @@ class MidiClockProcessor extends AudioWorkletProcessor {
           this.playing = false;
           break;
         case 'seek':
+          this.activeNoteIndices.clear();
           this.lapseFrames = data.time * sampleRate;
           this.startFrame = currentFrame - this.lapseFrames / this.speed;
-          this.lastNoteIdx = this.notes.findIndex((n) => n.time > data.time) - 1;
-          this.lastCCIdx = this.ccEvents.findIndex((c) => c.time > data.time) - 1;
+          const nextNote = this.notes.findIndex(n => n.time >= data.time);
+          const nextCC = this.ccEvents.findIndex(c => c.time >= data.time);
+          const nextOff = this.noteOffs.findIndex(n => n.time >= data.time);
+          this.lastNoteIdx = nextNote < 0 ? this.notes.length - 1 : nextNote - 1;
+          this.lastCCIdx = nextCC < 0 ? this.ccEvents.length - 1 : nextCC - 1;
+          this.lastOffIdx = nextOff < 0 ? this.noteOffs.length - 1 : nextOff - 1;
           break;
         case 'speed':
           this.speed = data.speed;
@@ -56,22 +72,33 @@ class MidiClockProcessor extends AudioWorkletProcessor {
     this.lapseFrames = (currentFrame - this.startFrame) * this.speed;
     const lapse = this.lapseFrames / sampleRate;
 
-    // Fire notes within the lookahead window
+    // Release notes using the same audio clock as note starts (including speed changes).
+    for (let i = this.lastOffIdx + 1; i < this.noteOffs.length; i++) {
+      const off = this.noteOffs[i];
+      if (off.time > lapse) break;
+      if (this.activeNoteIndices.delete(off.index)) {
+        this.port.postMessage({ type: 'noteOff', note: off.note });
+      }
+      this.lastOffIdx = i;
+    }
+
+    // Dispatch only when due: the target plays immediately on receipt.
     for (let i = this.lastNoteIdx + 1; i < this.notes.length; i++) {
       const note = this.notes[i];
       if (!note) break;
-      if (note.time > lapse + 0.05) break; // 50ms lookahead
-      if (note.time >= lapse - 0.02) {
+      if (note.time > lapse) break;
+      if (note.time >= lapse - 0.02 && note.time + (note.duration || 0) > lapse) {
+        this.activeNoteIndices.add(i);
         this.port.postMessage({ type: 'noteOn', note });
       }
       this.lastNoteIdx = i;
     }
 
-    // Fire CC events within the lookahead window
+    // Dispatch control changes when due.
     for (let i = this.lastCCIdx + 1; i < this.ccEvents.length; i++) {
       const cc = this.ccEvents[i];
       if (!cc) break;
-      if (cc.time > lapse + 0.05) break;
+      if (cc.time > lapse) break;
       if (cc.time >= lapse - 0.02) {
         this.port.postMessage({ type: 'cc', cc });
       }

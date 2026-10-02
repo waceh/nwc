@@ -1,6 +1,6 @@
 # NWC Converter & Viewer
 
-v1.0.818
+v1.0.819
 
 NoteWorthy Composer(`.nwc`) 파일을 브라우저에서 바로 열어보고, **MusicXML** 또는 **MIDI**로 변환합니다. 서버 없이 전부 브라우저 안에서 처리되며, 파일이 외부로 전송되지 않습니다.
 
@@ -48,6 +48,7 @@ python3 -m http.server 8765
   - iOS Safari에서 재생 시 무음이 되던 AudioContext 제스처 문제 수정
   - 내장 피아노 신디사이저의 유니즌 노트 스터터/필터 문제 수정
   - 페이지 레이아웃에서 마지막 시스템이 페이지 밖으로 밀려나던 줄바꿈 버그 수정
+  - 다단 시스템 간 커서 이동 보간 및 도돌이표/반복 구간 재생 커서 추적 안정화
   - 모바일 · 태블릿 반응형 레이아웃 대응
 - **MusicXML → MIDI**: 브라우저 내 순수 JS 구현
 - **zlib 압축 해제**: inflate.min.js

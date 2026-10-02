@@ -81,8 +81,8 @@ export class PlaybackHighlighter {
 	 *    add real playback time even though the notation is drawn once).
 	 *    Without this, the cursor drifts ahead of or behind the audio as soon
 	 *    as playback enters a second pass through a repeated section.
-	 *  - `_clickIndex`: a plain first-occurrence index (one entry per token,
-	 *    in score order) used for click-to-seek, where repeat ambiguity
+	 *  - `_clickIndex`: a first-occurrence index (one entry per token,
+	 *    in playback time) used for click-to-seek, where repeat ambiguity
 	 *    doesn't apply — clicking a notehead should seek to its first
 	 *    occurrence regardless of how many times it repeats.
 	 *
@@ -110,7 +110,7 @@ export class PlaybackHighlighter {
 			return head
 		}
 
-		// ── Click index: first occurrence only, raw score order ──────────
+		// ── Click targets: retain every staff; map score time below ───────
 		const clickIndex = []
 		for (let si = 0; si < staves.length; si++) {
 			const tokens = staves[si].tokens
@@ -126,18 +126,19 @@ export class PlaybackHighlighter {
 					time: ticksToSeconds(tok.tickValue, tempoMap),
 					x: head.x + (head.offsetX || 0),
 					y: head.y + (head.offsetY || 0),
+					sysIdx: head._sysIdx ?? tok._sysIdx ?? 0,
 				})
 			}
 		}
 		clickIndex.sort((a, b) => a.time - b.time || a.x - b.x)
-		this._clickIndex = clickIndex.filter((e, i) => i === 0 || e.time !== clickIndex[i - 1].time)
 
 		// ── Cursor index: repeat-aware, mirrors audio.js buildNoteEvents ──
 		const segments = buildPlaybackSegments(staves)
 		const index = []
 		let playbackOffset = 0
 
-		for (const seg of segments) {
+		for (let segIdx = 0; segIdx < segments.length; segIdx++) {
+			const seg = segments[segIdx]
 			const segStartSec = ticksToSeconds(seg.startTick, tempoMap)
 			const segEndSec = ticksToSeconds(seg.endTick, tempoMap)
 
@@ -158,6 +159,7 @@ export class PlaybackHighlighter {
 						x: head.x + (head.offsetX || 0),
 						y: head.y + (head.offsetY || 0),
 						sysIdx: head._sysIdx != null ? head._sysIdx : (tok._sysIdx != null ? tok._sysIdx : 0),
+						segIdx: segIdx,
 					})
 				}
 			}
@@ -175,21 +177,40 @@ export class PlaybackHighlighter {
 			deduped.push(index[i])
 		}
 
-		// Enforce strict monotonicity over time:
-		// 1. sysIdx must NEVER decrease (no backwards jumping between lines)
+		// Enforce strict monotonicity over time within each playback segment:
+		// 1. Within the same segment, sysIdx must NEVER decrease (no backwards jumping between lines)
 		// 2. Within the same system, x must NEVER decrease (no backward twitching within a line)
+		// Note: Across segment boundaries (e.g. repeat sections), jumping back to an earlier system is expected.
 		for (let i = 1; i < deduped.length; i++) {
 			const prev = deduped[i - 1]
 			const curr = deduped[i]
-			if (curr.sysIdx < prev.sysIdx) {
-				curr.sysIdx = prev.sysIdx
-			}
-			if (curr.sysIdx === prev.sysIdx && curr.x < prev.x) {
-				curr.x = prev.x
+			if (curr.segIdx === prev.segIdx) {
+				if (curr.sysIdx < prev.sysIdx) {
+					curr.sysIdx = prev.sysIdx
+				}
+				if (curr.sysIdx === prev.sysIdx && curr.x < prev.x) {
+					curr.x = prev.x
+				}
 			}
 		}
 
 		this._timeIndex = deduped
+		// Seeking uses the first actual playback occurrence, including repeats
+		// before the clicked note. Keep every staff's Y for multi-part scores.
+		const firstTimes = new Map()
+		playbackOffset = 0
+		for (const seg of segments) {
+			const start = ticksToSeconds(seg.startTick, tempoMap)
+			const end = ticksToSeconds(seg.endTick, tempoMap)
+			for (const entry of clickIndex) {
+				if (entry.time >= start && entry.time < end && !firstTimes.has(entry.time)) {
+					firstTimes.set(entry.time, playbackOffset + entry.time - start)
+				}
+			}
+			playbackOffset += end - start
+		}
+		this._clickIndex = clickIndex.filter(e => firstTimes.has(e.time))
+			.map(e => ({ ...e, time: firstTimes.get(e.time) }))
 	}
 
 	/**
@@ -209,8 +230,11 @@ export class PlaybackHighlighter {
 
 		// Filter to entries in the same system (Y within ~3 staff heights)
 		const sameSystem = []
+		const geometry = window._systemGeometry
+		const system = this._findSystem(scoreX, scoreY, geometry)
+		const systemIndex = system ? geometry.indexOf(system) : null
 		for (var i = 0; i < idx.length; i++) {
-			if (Math.abs(idx[i].y - scoreY) < fs * 3) {
+			if (systemIndex != null ? idx[i].sysIdx === systemIndex : Math.abs(idx[i].y - scoreY) < fs * 3) {
 				sameSystem.push(idx[i])
 			}
 		}
@@ -299,6 +323,13 @@ export class PlaybackHighlighter {
 	updateTime(time) {
 		this._currentTime = time
 		this._activeTokens = this._computeActiveTokens(time)
+	}
+
+	/** Display a seek position immediately, including before first playback. */
+	seek(time) {
+		this.updateTime(time)
+		if (!this._running) this._paused = true
+		this._repaintScore()
 	}
 
 	// ── Highlight mode ────────────────────────────────────────────────────
@@ -501,17 +532,19 @@ export class PlaybackHighlighter {
 		var sysIdx = pos.sysIdx
 
 		// When snap-to-notes is enabled and notes are active, lock cursor X
-		// to the leftmost active notehead for exact alignment.
+		// to the leftmost active notehead in the current system for exact alignment.
 		if (this._snapToNotes && this._activeTokens.size > 0) {
 			var minX = Infinity, snapSysIdx = null
 			for (const token of this._activeTokens) {
 				const head = token.drawingNoteHead
 					|| (token.notes && token.notes[0] && token.notes[0].drawingNoteHead)
 				if (!head) continue
+				const tokSys = head._sysIdx != null ? head._sysIdx : (token._sysIdx != null ? token._sysIdx : null)
+				if (sysIdx != null && tokSys != null && tokSys !== sysIdx) continue
 				const hx = head.x + (head.offsetX || 0)
 				if (hx < minX) {
 					minX = hx
-					snapSysIdx = head._sysIdx != null ? head._sysIdx : (token._sysIdx != null ? token._sysIdx : null)
+					snapSysIdx = tokSys
 				}
 			}
 			if (minX < Infinity) {
@@ -603,6 +636,10 @@ export class PlaybackHighlighter {
 		if (dt <= 0) return { x: a.x, y: a.y, sysIdx: a.sysIdx }
 
 		const t = (time - a.time) / dt
+		// A repeat/jump must happen at its scheduled time, never ahead of audio.
+		if (a.segIdx !== b.segIdx) {
+			return { x: a.x, y: a.y, sysIdx: a.sysIdx }
+		}
 
 		// Cross-system boundary detection:
 		// When a and b belong to different systems, smoothly travel to the end of system a,
@@ -615,8 +652,8 @@ export class PlaybackHighlighter {
 			const sysA = (a.sysIdx != null && sg) ? sg[a.sysIdx] : null
 			const endX = sysA ? (sysA.endX - 4) : (a.x + getFontSize() * 2)
 
-			if (t < 0.92) {
-				const localT = t / 0.92
+			if (time < b.time) {
+				const localT = t
 				return {
 					x: a.x + (endX - a.x) * localT,
 					y: a.y,

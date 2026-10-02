@@ -134,7 +134,9 @@ class NoteTxtObj extends NWCTxtObj {
         for (const p of parts) {
           if (p === 'Dotted') this.dots = 1;
           if (p === 'DblDotted') this.dots = 2;
-          if (p === 'Triplet') this.attr |= DurationType.Triplet;
+          if (p === 'Triplet=First') this.attr |= DurationType.TriStart;
+          else if (p === 'Triplet=End') this.attr |= DurationType.TriStop;
+          else if (p === 'Triplet') this.attr |= DurationType.TriCont;
           if (p === 'Slur') this.attr |= NoteAttr.SlurBeg;
           if (p === 'Grace') this.attr |= NoteAttr.Grace;
         }
@@ -224,7 +226,9 @@ class RestTxtObj extends NWCTxtObj {
         for (const p of parts) {
           if (p === 'Dotted') this.dots = 1;
           if (p === 'DblDotted') this.dots = 2;
-          if (p === 'Triplet') this.attr |= DurationType.Triplet;
+          if (p === 'Triplet=First') this.attr |= DurationType.TriStart;
+          else if (p === 'Triplet=End') this.attr |= DurationType.TriStop;
+          else if (p === 'Triplet') this.attr |= DurationType.TriCont;
         }
       }
       if (f.startsWith('Offset:')) this.offset = parseInt(fieldValue(f)) || 0;
@@ -266,7 +270,9 @@ class ChordTxtObj extends NWCTxtObj {
         for (const p of parts) {
           if (p === 'Dotted') this.dots = 1;
           if (p === 'DblDotted') this.dots = 2;
-          if (p === 'Triplet') this.attr |= DurationType.Triplet;
+          if (p === 'Triplet=First') this.attr |= DurationType.TriStart;
+          else if (p === 'Triplet=End') this.attr |= DurationType.TriStop;
+          else if (p === 'Triplet') this.attr |= DurationType.TriCont;
           if (p === 'Slur') this.attr |= NoteAttr.SlurBeg;
         }
       }

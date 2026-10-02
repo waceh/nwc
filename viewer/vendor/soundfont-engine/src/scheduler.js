@@ -92,6 +92,7 @@ export class MidiScheduler extends EventEmitter {
    * @param {Array<{time: number, channel: number, controller: number, value: number}>} [data.controlChanges]
    */
   load({ notes = [], controlChanges = [] } = {}) {
+    this._target.allSoundOff?.();
     this._notes = notes;
     this._cc = controlChanges;
     this._currentTime = 0;
@@ -127,6 +128,8 @@ export class MidiScheduler extends EventEmitter {
   pause() {
     this._playing = false;
     this._node?.port.postMessage({ type: 'pause' });
+    this._activeNotes.clear();
+    this._target.allSoundOff?.();
   }
 
   /** Stop playback and reset to the beginning. */
@@ -183,22 +186,21 @@ export class MidiScheduler extends EventEmitter {
         this._target.noteOn?.(note.midi, note.velocity, ch);
         // Emit for external consumers (e.g. visualization)
         this.emit('noteOn', note);
-        // Schedule noteOff after duration
-        if (note.duration > 0) {
-          const offDelay = (note.duration * 1000) / this._speed;
-          setTimeout(() => {
-            const count = this._activeNotes.get(key) || 0;
-            if (count <= 1) {
-              // Last note with this pitch on this channel — send real noteOff
-              this._activeNotes.delete(key);
-              this._target.noteOff?.(note.midi, ch);
-            } else {
-              // Other notes still active — just decrement, don't send noteOff
-              this._activeNotes.set(key, count - 1);
-            }
-            this.emit('noteOff', note);
-          }, offDelay);
+        break;
+      }
+
+      case 'noteOff': {
+        const ch = note.channel ?? 0;
+        const key = ch + ':' + note.midi;
+        const count = this._activeNotes.get(key) || 0;
+        if (!count) break;
+        if (count === 1) {
+          this._activeNotes.delete(key);
+          this._target.noteOff?.(note.midi, ch);
+        } else {
+          this._activeNotes.set(key, count - 1);
         }
+        this.emit('noteOff', note);
         break;
       }
 
@@ -212,7 +214,7 @@ export class MidiScheduler extends EventEmitter {
         this.emit('time', lapse);
         // Auto-stop at end
         if (lapse >= this._duration && this._playing) {
-          this._playing = false;
+          this.pause();
           this.emit('end');
         }
         break;

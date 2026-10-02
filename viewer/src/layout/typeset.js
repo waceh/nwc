@@ -304,29 +304,22 @@ function computeSystemBreaks(boundaries, pageWidth, leftMargin) {
 	const allBreaks = []
 	let systemIndex = 0
 
-	const defaultBarsPerSys = (typeof getMeasuresPerSystem === 'function') ? getMeasuresPerSystem() : 4
-
 	for (const seg of segments) {
 		const isForcedEnd = forcedBreakIndices.includes(seg.end)
-		const measureCount = seg.end - seg.start + 1
 
 		let segBreaks = []
 
 		if (isForcedEnd) {
-			// If this segment ends in an explicit forced break (SysBreak) and has a reasonable
-			// measure count (<= 8 measures), it represents a system explicitly formatted
-			// by the score author — keep it intact without inserting extra breaks.
-			if (measureCount > 8) {
-				for (let bi = seg.start + defaultBarsPerSys - 1; bi < seg.end; bi += defaultBarsPerSys) {
-					segBreaks.push(bi)
-				}
+			// An explicit SysBreak preserves the original phrasing where it fits.
+			// Preserve the author's system breaks; subdivide only if it cannot fit.
+			const startX = seg.start > 0 ? boundaries[seg.start - 1].x : 0
+			if (boundaries[seg.end].x - startX > pageWidth) {
+				segBreaks = dpOptimalBreaks(boundaries, seg.start, seg.end, pageWidth)
 			}
 		} else {
 			// No explicit line break in this segment (or score has no forced breaks at all):
-			// Default to 4 measures per line as requested.
-			for (let bi = seg.start + defaultBarsPerSys - 1; bi < seg.end; bi += defaultBarsPerSys) {
-				segBreaks.push(bi)
-			}
+			// Choose balanced lines from actual measure widths.
+			segBreaks = dpOptimalBreaks(boundaries, seg.start, seg.end, pageWidth)
 		}
 
 		for (const bi of segBreaks) {
@@ -1611,6 +1604,7 @@ function scoreScrollLayout(drawing, data, staves, stavePointers, ctx, canvas) {
 		startX: staveStartX,
 		endX: maxCanvasWidth,
 	}]
+	window._systemGeometry = _systemGeometry
 
 	// Build measure geometry from barline positions
 	_measureGeometry = buildMeasureGeometry(staves)
@@ -1952,6 +1946,7 @@ function scoreWrapLayout(drawing, data, staves, stavePointers, ctx, canvas) {
 			endX: leftMargin + sysJustW,
 		})
 	}
+	window._systemGeometry = _systemGeometry
 
 	// Build measure geometry from barline positions
 	_measureGeometry = buildMeasureGeometry(staves)
