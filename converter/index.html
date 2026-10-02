@@ -217,7 +217,7 @@
 </head>
 <body>
 
-  <div style="position: fixed; top: 16px; right: 20px; font-size: 11px; font-weight: 600; color: #888; padding: 2px 6px; border-radius: 4px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); user-select: none;">v1.0.819</div>
+  <div style="position: fixed; top: 16px; right: 20px; font-size: 11px; font-weight: 600; color: #888; padding: 2px 6px; border-radius: 4px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); user-select: none;">v1.0.820</div>
 
   <h1>NWC & MusicXML Converter</h1>
   <p class="subtitle">NoteWorthy Composer 및 MusicXML 파일을 MusicXML 또는 MIDI로 변환합니다</p>
@@ -239,7 +239,13 @@
 
   <div class="result" id="result">
     <div class="result-title">변환 완료</div>
-    <div class="file-info" id="file-info"></div>
+    <div class="file-info" id="file-info">
+      <span class="label">원본 파일</span> <span class="value" data-field="filename"></span>
+      <span class="label">제목</span> <span class="value" data-field="title"></span>
+      <span class="label">파트</span> <span class="value" data-field="staffCount"></span>
+      <span class="label">마디</span> <span class="value" data-field="measureCount"></span>
+      <span class="label">음표</span> <span class="value" data-field="noteCount"></span>
+    </div>
     <div class="btn-row">
       <a class="btn-download xml"  id="download-xml"  href="#" download="">⬇ MusicXML (가사 포함)</a>
       <a class="btn-download midi" id="download-midi" href="#" download="">⬇ MIDI (가사 미지원)</a>
@@ -251,7 +257,7 @@
 
   <p class="viewer-link">파일 없이 둘러보려면 <a href="../viewer/index.html" target="_blank" rel="opener">NWC Viewer</a>를 바로 열어보세요.</p>
 
-  <footer>브라우저에서 직접 처리 — 파일이 서버로 전송되지 않습니다 · v1.0.819</footer>
+  <footer>브라우저에서 직접 처리 — 파일이 서버로 전송되지 않습니다 · v1.0.820</footer>
 
   <script type="module">
     import { convertNWCToMusicXML, parseNWC } from '../viewer/lib/nwc2xml/index.js';
@@ -558,13 +564,16 @@
       const measureCount = (xml.match(/<measure/g) || []).length;
       const noteCount    = (xml.match(/<note>/g)   || []).length;
 
-      fileInfo.innerHTML = `
-        <span class="label">원본 파일</span> <span class="value">${filename}</span>
-        <span class="label">제목</span>       <span class="value">${infoObj?.title || '(없음)'}</span>
-        <span class="label">파트</span>       <span class="value">${staffCount}개</span>
-        <span class="label">마디</span>       <span class="value">${measureCount}개</span>
-        <span class="label">음표</span>       <span class="value">${noteCount}개</span>
-      `;
+      const values = {
+        filename,
+        title: infoObj?.title || '(없음)',
+        staffCount: `${staffCount}개`,
+        measureCount: `${measureCount}개`,
+        noteCount: `${noteCount}개`,
+      };
+      for (const [field, value] of Object.entries(values)) {
+        fileInfo.querySelector(`[data-field="${field}"]`).textContent = value;
+      }
       result.classList.add('visible');
     }
 
