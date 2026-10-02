@@ -109,3 +109,52 @@ test('restored lyrics reach the final phrase in all five parts without extra pla
     assert.deepEqual(final, ['One', 'call', 'a-', 'way'])
   }
 })
+
+test('RestChord retains its rest and sounding voice in both parsers', () => {
+  const text = textScore([
+    '|RestChord|Dur:8th,DblDotted|Opts:Stem=Up|Dur2:Whole|Pos2:-8,-6,-3',
+    '|Note|Dur:4th|Pos:0',
+    '|RestChord|Dur:8th|Opts:Stem=Down|Dur2:Half,Dotted|Pos2:#-3^',
+    '|Note|Dur:4th|Pos:-3',
+  ])
+  for (const mode of [true, false]) {
+    const data = decode(Buffer.from(text), mode)
+    const events = data.score.staves[0].tokens.filter(t => t.type === 'Chord' || t.type === 'Note')
+    assert.deepEqual(events[0].notes.map(n => n.position), [-8, -6, -3])
+    assert.deepEqual(events[0].notes.map(n => n.duration), [1, 1, 1])
+    assert.equal(events[0].durValue.value(), 1)
+    assert.equal(events[0].rest.durValue.value(), 7 / 32)
+    assert.equal(events[1].tickValue, 7 / 32)
+    assert.equal(events[2].notes[0].accidental, '#')
+    assert.equal(events[2].notes[0].tie, 1)
+    assert.equal(events[2].duration, 2)
+    assert.equal(events[2].dots, 1)
+    assert.equal(events[3].tickValue - events[2].tickValue, 1 / 8)
+  }
+})
+
+test('MusicXML RestChord preserves simultaneous rest and notes without shifting the next onset', () => {
+  const file = parseNWCTxt(textScore([
+    '|RestChord|Dur:8th,DblDotted|Dur2:Whole|Pos2:-8,-6,-3',
+    '|Note|Dur:4th|Pos:0',
+  ]))
+  const xml = toMusicXML(file)
+  const div = Number(xml.match(/<divisions>(\d+)<\/divisions>/)[1])
+  let time = 0, onset = 0
+  const notes = []
+  for (const match of xml.matchAll(/<(note|backup|forward)>([\s\S]*?)<\/\1>/g)) {
+    const [, kind, body] = match
+    const duration = Number(body.match(/<duration>(\d+)<\/duration>/)?.[1] || 0)
+    if (kind === 'backup') time -= duration
+    else if (kind === 'forward') time += duration
+    else {
+      if (!body.includes('<chord/>')) { onset = time; time += duration }
+      notes.push({ onset, duration, rest: body.includes('<rest') })
+    }
+  }
+  assert.equal(notes.length, 5)
+  assert.equal(notes[0].rest, true)
+  assert.deepEqual(notes.slice(1, 4).map(n => n.onset), [0, 0, 0])
+  assert.deepEqual(notes.slice(1, 4).map(n => n.duration), [div * 4, div * 4, div * 4])
+  assert.equal(notes[4].onset, div * 7 / 8)
+})

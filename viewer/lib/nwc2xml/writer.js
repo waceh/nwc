@@ -230,6 +230,23 @@ function writeStaff(w, staff, measureNum) {
         
       case ObjType.RestCM:
         needNewMeasure = true;
+        // NWCTXT RestChord contains two simultaneous voices. Return to
+        // the onset for the sounding notes, then advance by the rest voice.
+        if (obj.rest) {
+          const restTicks = obj.rest.getDurationTicks(div);
+          writeRest(w, obj.rest, div, clefShift, curBarDuration);
+          w.open('backup'); w.elem('duration', restTicks); w.close('backup');
+          let firstNote = true;
+          for (const child of obj.children) {
+            writeNote(w, child, div, clefShift, measureAlter, [], -1, !firstNote);
+            firstNote = false;
+          }
+          if (!firstNote) {
+            w.open('backup'); w.elem('duration', obj.children[0].getDurationTicks(div)); w.close('backup');
+          }
+          w.open('forward'); w.elem('duration', restTicks); w.close('forward');
+          break;
+        }
         let firstR = true;
         for (const child of obj.children) {
           if (child.type === ObjType.Note) {

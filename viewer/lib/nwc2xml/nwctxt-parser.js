@@ -186,7 +186,7 @@ class NoteTxtObj extends NWCTxtObj {
   getDurationTicks(div) {
     let d = div / (1 << this.duration);
     const dt = this.getDurationType();
-    if (dt & DurationType.DotDot) d += d / 4;
+    if (dt & DurationType.DotDot) d *= 7 / 4;
     else if (dt & DurationType.Dot) d += d / 2;
     if (dt & DurationType.Triplet) d = d * 2 / 3;
     return Math.round(d * 4);
@@ -245,7 +245,7 @@ class RestTxtObj extends NWCTxtObj {
   getDurationTicks(div) {
     let d = div / (1 << this.duration);
     const dt = this.getDurationType();
-    if (dt & DurationType.DotDot) d += d / 4;
+    if (dt & DurationType.DotDot) d *= 7 / 4;
     else if (dt & DurationType.Dot) d += d / 2;
     if (dt & DurationType.Triplet) d = d * 2 / 3;
     return Math.round(d * 4);
@@ -258,6 +258,25 @@ class RestTxtObj extends NWCTxtObj {
     return d;
   }
   getOctaveStep(clefShift) { return { octave: 4, step: 'B', hasPos: this.offset !== 0 }; }
+}
+
+// RestChord advances by Dur while its sounding voice uses Dur2 / Pos2.
+class RestChordTxtObj extends RestTxtObj {
+  getDurationType() { return this.rest.getDurationType(); }
+  getAttributes() { return this.attr; }
+  constructor(s) { super(s); this.type = ObjType.RestCM; }
+  parse(fields) {
+    super.parse(fields);
+    const chord = new ChordTxtObj(this.staff);
+    chord.parse(fields.filter(f => !f.startsWith('Dur:') && !f.startsWith('Pos:'))
+      .map(f => f.startsWith('Dur2:') ? f.replace('Dur2:', 'Dur:')
+        : f.startsWith('Pos2:') ? f.replace('Pos2:', 'Pos:') : f));
+    this.children = chord.children;
+    this.attr = chord.attr;
+    this.count = this.children.length;
+    this.rest = new RestTxtObj(this.staff);
+    this.rest.parse(fields);
+  }
 }
 
 class ChordTxtObj extends NWCTxtObj {
@@ -328,7 +347,7 @@ class ChordTxtObj extends NWCTxtObj {
   getDurationTicks(div) {
     let d = div / (1 << this.duration);
     const dt = this.getDurationType();
-    if (dt & DurationType.DotDot) d += d / 4;
+    if (dt & DurationType.DotDot) d *= 7 / 4;
     else if (dt & DurationType.Dot) d += d / 2;
     if (dt & DurationType.Triplet) d = d * 2 / 3;
     return Math.round(d * 4);
@@ -480,7 +499,8 @@ export function parseNWCTxt(text) {
         else if (type === 'Bar') obj = new BarLineTxtObj(staff);
         else if (type === 'Note') obj = new NoteTxtObj(staff);
         else if (type === 'Rest') obj = new RestTxtObj(staff);
-        else if (type === 'Chord' || type === 'RestChord') obj = new ChordTxtObj(staff);
+        else if (type === 'Chord') obj = new ChordTxtObj(staff);
+        else if (type === 'RestChord') obj = new RestChordTxtObj(staff);
         else if (type === 'Tempo') obj = new TempoTxtObj(staff);
         else if (type === 'Dynamic') obj = new DynamicTxtObj(staff);
         else if (type === 'Text') obj = new TextTxtObj(staff);
@@ -517,7 +537,7 @@ function resolveSlurs(objects) {
       pendingSlur = false;
       continue;
     }
-    if (obj.type !== ObjType.Note && obj.type !== ObjType.NoteCM) continue;
+    if (obj.type !== ObjType.Note && obj.type !== ObjType.NoteCM && obj.type !== ObjType.RestCM) continue;
     const outgoing = !!(obj.getAttributes() & NoteAttr.SlurBeg);
     const state = pendingSlur
       ? (outgoing ? NoteAttr.SlurMid : NoteAttr.SlurEnd)
@@ -540,10 +560,10 @@ function resolveSlurs(objects) {
 function resolveTies(objects) {
   let pendingTie = false;
   for (const obj of objects) {
-    if (obj.type !== ObjType.Note && obj.type !== ObjType.NoteCM) continue;
+    if (obj.type !== ObjType.Note && obj.type !== ObjType.NoteCM && obj.type !== ObjType.RestCM) continue;
 
     if (pendingTie) {
-      if (obj.type === ObjType.NoteCM && obj.children.length > 0) {
+      if ((obj.type === ObjType.NoteCM || obj.type === ObjType.RestCM) && obj.children.length > 0) {
         // The adapter derives the chord token's top-level tie/pitch fields
         // from the *first* child (see nwc.js's adaptObject case 10), so the
         // tie-end flag has to land there to be visible.

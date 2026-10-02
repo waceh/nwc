@@ -194,13 +194,15 @@ SightReader.prototype.read = function (staves) {
 
 			if (token.durValue) {
 				// computes cumulative value duration
-				this.tickCounter.add(token.durValue).simplify()
+				if (token.rest) this._handle_duration(token.rest)
+				const advance = token.rest ? token.rest.durValue : token.durValue
+				this.tickCounter.add(advance).simplify()
 				// Grace notes should NOT advance the display counter (tabCounter).
 				// They occupy visual space via rod/spring but have zero timing
 				// so the principal note after them aligns with the same beat
 				// on other staves.
 				if (!token.grace) {
-					this.tabCounter.add(token.durValue).simplify()
+					this.tabCounter.add(advance).simplify()
 				}
 			} else {
 				// Only initial header tokens (before first note/rest/barline) advance tabCounter

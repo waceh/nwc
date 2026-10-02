@@ -364,6 +364,13 @@ function adaptObject(obj) {
 				token.position = 0
 				token.triplet = (rcDt >> 2) & 3
 			}
+			token.type = rcNotes.length ? 'Chord' : 'Rest'
+			if (obj.rest) {
+				var restDt = obj.rest.getDurationType()
+				token.rest = { duration: ADAPTER_DURATIONS[obj.rest.getDuration()] || 4,
+					dots: (restDt & 2) ? 2 : (restDt & 1) ? 1 : 0,
+					triplet: (restDt >> 2) & 3, position: -(obj.rest.offset || 0) }
+			}
 			token.chords = rcNoteChildren.length
 			token.notes = rcNotes
 			break
@@ -720,6 +727,13 @@ function mapTokens(token) {
 				token.beat = +parts[1]
 			}
 
+			break
+		case 'RestChord':
+			token.type = 'Chord'
+			token.rest = { ...parseDur(token.Dur), position: -(+token.Offset || 0) }
+			token.notes = getChordPos(token.Pos2)
+			Object.assign(token, parseDur(token.Dur2))
+			token.notes.forEach(note => Object.assign(note, parseDur(token.Dur2), { tie: note.tied === '^' ? 1 : 0 }))
 			break
 		case 'Chord':
 			Object.assign(token, { notes: getChordPos(token.Pos) })

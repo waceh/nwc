@@ -3040,6 +3040,20 @@ function handleToken(token, tokenIndex, staveIndex, cursor) {
 			break
 
 		case 'Chord':
+			// A malformed empty chord cannot supply a notehead anchor.
+			if (!token.notes || token.notes.length === 0) break
+			if (token.rest) {
+				const restSymbols = { 1: 'restWhole', 2: 'restHalf', 4: 'restQuarter', 8: 'rest8th', 16: 'rest16th', 32: 'rest32nd', 64: 'rest64th' }
+				const restGlyph = new Glyph(restSymbols[token.rest.duration], token.rest.position + 4)
+				cursor.posGlyph(restGlyph)
+				drawing.add(restGlyph)
+				for (let dot = 0; dot < token.rest.dots; dot++) {
+					const mark = new Glyph('augmentationDot', token.rest.position + 5)
+					cursor.posGlyph(mark)
+					mark.offsetX = restGlyph.width + dot * getFontSize() * 0.15
+					drawing.add(mark)
+				}
+			}
 			// BARLINE_NOTE_EXTRA is now absorbed into the barline's own gap.
 			cursor._afterBarline = false
 
