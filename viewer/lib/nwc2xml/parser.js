@@ -1,5 +1,5 @@
 // NWC File Parser
-import { BinaryReader } from './reader.js';
+import { BinaryReader, decodeNwcText } from './reader.js';
 import { NWC_HEADER, NWZ_HEADER, NWC_Version, ObjType, isValidVersion } from './constants.js';
 import { createObject, NoteCMObj, RestCMObj } from './objects.js';
 
@@ -65,6 +65,9 @@ export function parseNWC(buffer) {
   if (header === NWZ_HEADER) {
     data = decompress(data.slice(6));
   }
+
+  const textStart = data[0] === 0xef && data[1] === 0xbb && data[2] === 0xbf ? 3 : 0;
+  if (data[textStart] === 0x21) return parseNWCTxt(decodeNwcText(data.subarray(textStart)));
   
   const r = new BinaryReader(data);
   
@@ -81,12 +84,12 @@ export function parseNWC(buffer) {
   if (!isValidVersion(file.version)) throw new Error(`Unsupported NWC version: ${file.version.toString(16)}`);
   
   // V275 (0x24b) has embedded NWCTXT - find and parse it.
-  // The embedded text is Windows-1252 encoded (not UTF-8), so we must use that
-  // decoder to correctly handle non-ASCII characters (accented letters, ©, etc.).
+  // Locate the ASCII marker in bytes before decoding. Binary header bytes
+  // must not influence UTF-8 / Korean / Western text detection.
   if (file.version === NWC_Version.V275) {
-    const str = new TextDecoder('windows-1252').decode(data);
-    const idx = str.indexOf('!NoteWorthyComposer(');
-    if (idx >= 0) return parseNWCTxt(str.substring(idx));
+    const marker = new TextEncoder().encode('!NoteWorthyComposer(');
+    const idx = data.findIndex((_, i) => marker.every((byte, j) => data[i + j] === byte));
+    if (idx >= 0) return parseNWCTxt(decodeNwcText(data.subarray(idx)));
   }
   
   // After version: 1 unknown byte, then variable zero padding, then two

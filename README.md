@@ -1,6 +1,6 @@
 # NWC Converter & Viewer
 
-v1.0.820
+v1.0.821
 
 NoteWorthy Composer(`.nwc`) 파일을 브라우저에서 바로 열어보고, **MusicXML** 또는 **MIDI**로 변환합니다. 서버 없이 전부 브라우저 안에서 처리되며, 파일이 외부로 전송되지 않습니다.
 
@@ -39,6 +39,8 @@ python3 -m http.server 8765
 변환기는 `.nwc` 파일(바이너리 v1.5~v2.0, NWCTXT 내장 v2.75 모두) 하나로 **MusicXML 4.0**(가사 포함)과 **MIDI**(Format 1, 가사 미지원) 두 가지를 동시에 만들어냅니다.
 
 뷰어는 `.nwc`/`.nwz`/`.nwctxt` 외에도 MID/MIDI, MusicXML(.musicxml/.mxl)을 바로 열어서 렌더링·재생할 수 있습니다.
+
+NWC 제목·파트 이름·가사는 UTF-8과 EUC-KR/CP949(확장 한글 포함)를 지원합니다. NWCTXT는 필드별로 인코딩을 판별하며, 한글 가사는 MusicXML 변환에도 유지됩니다.
 
 ## 기술 스택
 

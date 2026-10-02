@@ -1,3 +1,5 @@
+import { cp949Extension } from './cp949.js';
+
 // Binary reader with little-endian support
 export class BinaryReader {
   constructor(buffer) {
@@ -51,7 +53,7 @@ export class BinaryReader {
 }
 
 const _td_utf8  = new TextDecoder('utf-8', { fatal: true });
-const _td_euckr = new TextDecoder('euc-kr');
+const _td_euckr = new TextDecoder('euc-kr', { fatal: true });
 const _td_w1252 = new TextDecoder('windows-1252');
 
 // EUC-KR / CP949 lead-byte pattern: 0x81-0xFE followed by 0x41-0x5A,
@@ -76,7 +78,7 @@ function looksLikeEUCKR(bytes) {
   return high > 0;
 }
 
-function decodeString(bytes) {
+export function decodeString(bytes) {
   // NWC files store strings in the locale codepage of the authoring Windows
   // machine. Try UTF-8 first (valid UTF-8 is a strict subset of ASCII), then
   // detect EUC-KR / CP949 (Korean), and fall back to Windows-1252 which maps
@@ -84,7 +86,36 @@ function decodeString(bytes) {
   try {
     return _td_utf8.decode(bytes);
   } catch {
-    if (looksLikeEUCKR(bytes)) return _td_euckr.decode(bytes);
+    if (looksLikeEUCKR(bytes)) {
+      try {
+        let text = '';
+        for (let i = 0; i < bytes.length; i++) {
+          if (bytes[i] < 0x80) {
+            text += String.fromCharCode(bytes[i]);
+          } else {
+            const extension = cp949Extension(bytes[i], bytes[i + 1]);
+            text += extension ?? _td_euckr.decode(bytes.subarray(i, i + 2));
+            i++;
+          }
+        }
+        if (/[\uac00-\ud7a3]/.test(text)) return text;
+      } catch { /* Not a valid Korean string; use the Western fallback. */ }
+    }
     return _td_w1252.decode(bytes);
   }
+}
+
+// Decode NWCTXT fields separately: old Windows codepages and UTF-8 may
+// coexist in metadata and lyrics. Never include the binary NWC header.
+export function decodeNwcText(bytes) {
+  const parts = [];
+  let start = 0;
+  for (let i = 0; i < bytes.length; i++) {
+    if (bytes[i] === 0x7c || bytes[i] === 0x0a) {
+      parts.push(decodeString(bytes.subarray(start, i)), String.fromCharCode(bytes[i]));
+      start = i + 1;
+    }
+  }
+  parts.push(decodeString(bytes.subarray(start)));
+  return parts.join('');
 }
