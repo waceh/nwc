@@ -350,9 +350,18 @@ function formatTime(sec) {
 
 const playBtn = document.getElementById('play')
 const fullscreenPlayBtn = document.getElementById('fullscreen_play_toggle')
-const stopBtn = document.getElementById('stop')
 const progressBar = document.getElementById('progress_bar')
 const timeLabel = document.getElementById('playback_time')
+
+function setPlaybackButtonState(playing) {
+	const label = playing ? '일시정지' : '재생'
+	for (const button of [playBtn, fullscreenPlayBtn]) {
+		if (!button) continue
+		button.textContent = playing ? '■' : '▶'
+		button.title = label
+		button.ariaLabel = label
+	}
+}
 
 let _seeking = false
 
@@ -380,16 +389,13 @@ playback.onNoteOff((ev) => {
 })
 
 playback.onStateChange((playing) => {
-	const label = playing ? '일시정지' : '재생'
-	playBtn.textContent = label
-	if (fullscreenPlayBtn) fullscreenPlayBtn.textContent = label
+	setPlaybackButtonState(playing)
 	if (playing) highlighter.start()
 	else highlighter.pause()  // keep highlights frozen on pause
 })
 
 playback.onEnd(() => {
-	playBtn.textContent = '재생'
-	if (fullscreenPlayBtn) fullscreenPlayBtn.textContent = '재생'
+	setPlaybackButtonState(false)
 	progressBar.value = 0
 	timeLabel.textContent = formatTime(0) + ' / ' + formatTime(playback.duration)
 	highlighter.stop()
@@ -517,7 +523,11 @@ function handlePlayToggleGesture() {
 	togglePlayPause()
 }
 
-playBtn.onclick = handlePlayToggleGesture
+playBtn.onclick = () => {
+	const starting = !playback.playing && !preparingPlayback
+	handlePlayToggleGesture()
+	if (starting) setFullscreenMode(true)
+}
 
 // Spacebar play/pause — ignored while typing into an input/textarea so it
 // doesn't hijack normal text entry.
@@ -531,17 +541,6 @@ document.addEventListener('keydown', (e) => {
 	}
 	handlePlayToggleGesture()
 })
-
-stopBtn.onclick = () => {
-	playRequestId++
-	cancelLeadIn()
-	_pendingSeekTime = null
-	playback.stop()
-	highlighter.stop()
-	pianoKeyboard.clear()
-	progressBar.value = 0
-	timeLabel.textContent = formatTime(0) + ' / ' + formatTime(playback.duration)
-}
 
 progressBar.addEventListener('pointerdown', () => { _seeking = true })
 
@@ -1460,13 +1459,20 @@ if (fullscreenToggleBtn) fullscreenToggleBtn.onclick = () => setFullscreenMode(t
 if (fullscreenExitBtn) fullscreenExitBtn.onclick = () => setFullscreenMode(false)
 if (fullscreenPlayBtn) fullscreenPlayBtn.onclick = handlePlayToggleGesture
 
-// ---- Menu simplify (collapses the toolbar to a single row: Open / 재생 / 정지 / 옥타브 / 음량) ----
+// ---- Menu simplify (the primary actions stay in place) ----
 
-const menuSimpleToggleBtn = document.getElementById('menu_simple_toggle')
-const menuFullToggleBtn = document.getElementById('menu_full_toggle')
+const menuToggleBtn = document.getElementById('menu_toggle')
+
+function updateMenuToggle() {
+	if (!menuToggleBtn) return
+	const simple = document.body.classList.contains('menu-simple')
+	menuToggleBtn.textContent = simple ? '메뉴 보기' : '메뉴 간략히'
+	menuToggleBtn.title = simple ? '전체 메뉴 보기' : '메뉴 간략히 보기'
+}
 
 function setMenuSimple(on) {
 	document.body.classList.toggle('menu-simple', on)
+	updateMenuToggle()
 	requestAnimationFrame(() => {
 		resizeToFit()
 		if (getLayoutMode() === 'wrap') {
@@ -1480,8 +1486,8 @@ function setMenuSimple(on) {
 	})
 }
 
-if (menuSimpleToggleBtn) menuSimpleToggleBtn.onclick = () => setMenuSimple(true)
-if (menuFullToggleBtn) menuFullToggleBtn.onclick = () => setMenuSimple(false)
+if (menuToggleBtn) menuToggleBtn.onclick = () => setMenuSimple(!document.body.classList.contains('menu-simple'))
+updateMenuToggle()
 
 document.addEventListener('keydown', (e) => {
 	if (e.key !== 'Escape') return

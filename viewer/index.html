@@ -65,7 +65,8 @@
 				left: 8px;
 				z-index: 200;
 				min-height: 44px;
-				min-width: 80px;
+				min-width: 44px;
+				font-size: 18px;
 			}
 
 			body.fullscreen-mode #top,
@@ -83,18 +84,9 @@
 				}
 			}
 
-			/* Menu simplify — independent toggle from full view (전체보기)
-			   above. Collapses the toolbar to a single row (메뉴 보기 /
-			   재생 / 정지 / 음량 only) instead of hiding it entirely, so
-			   playback stays reachable while the score gets most of the
-			   freed vertical space. */
-			.menu-simple-only {
-				display: none;
-			}
-
-			body.menu-simple .menu-simple-only {
-				display: inline-block;
-			}
+			/* Keep the four primary controls together in both menu modes. */
+			.primary-controls { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+			.primary-controls #open, .primary-controls #play { min-width: 44px; min-height: 44px; font-size: 19px; }
 
 			body.menu-simple .menu-extra,
 			body.menu-simple #footer {
@@ -354,8 +346,7 @@
 				display: inline-block;
 			}
 
-			#menu_simple_toggle,
-			#menu_full_toggle {
+			#menu_toggle {
 				background: #4f46e5 !important;
 				color: #ffffff !important;
 				font-weight: 600 !important;
@@ -363,10 +354,11 @@
 				border-radius: 4px !important;
 				padding: 3px 10px !important;
 				box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+				width: 100px;
+				box-sizing: border-box;
 			}
 
-			#menu_simple_toggle:hover,
-			#menu_full_toggle:hover {
+			#menu_toggle:hover {
 				background: #4338ca !important;
 				border-color: #4f46e5 !important;
 			}
@@ -517,17 +509,21 @@
 		<div id="container">
 			<div id="top">
 				<div class="toolbar">
-					<!-- File -->
-					<div class="toolbar-group menu-extra">
-						<a href="../converter/index.html" id="logo">NWC Viewer</a>
-					</div>
-
-					<!-- Playback -->
+					<!-- Primary actions keep the same position in both menu modes. -->
 					<div class="toolbar-group">
-						<button id="open" title="악보 파일 열기">Open</button>
-						<input type="file" id="opener" hidden />
-						<button id="play" title="재생 / 일시정지">재생</button>
-						<button id="stop" title="정지">정지</button>
+						<span class="primary-controls">
+							<button id="open" type="button" title="악보 파일 열기" aria-label="악보 파일 열기"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 2h8l5 5v15H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z"/><path d="M14 2v6h5"/></svg></button>
+							<input type="file" id="opener" hidden />
+							<button id="play" type="button" title="재생" aria-label="재생">▶</button>
+							<button id="menu_toggle" type="button" title="전체 메뉴 보기">메뉴 보기</button>
+							<button id="fullscreen_toggle" type="button" title="전체보기 (악보만 표시)">전체보기</button>
+						</span>
+						<span id="page_nav" style="display: none;">
+							<button id="page_prev" title="이전 페이지">&lt;</button>
+							<input id="page_input" type="number" min="1" value="1" title="페이지 이동" style="width: 32px; text-align: center;">
+							<span id="page_indicator" style="font-size: 11px; color: var(--text-dim);"> / 1</span>
+							<button id="page_next" title="다음 페이지">&gt;</button>
+						</span>
 						<span id="playback_time" class="time-display menu-extra">0:00 / 0:00</span>
 						<input type="range" id="progress_bar"
 							class="menu-extra"
@@ -560,23 +556,15 @@
 							<button id="octave_up" style="padding: 1px 6px; font-size: 11px; font-weight: bold; border-radius: 3px; cursor: pointer;" title="+1 옥타브 높임">▲</button>
 						</div>
 						<button id="autoscroll_toggle" class="active menu-extra" title="재생 중 자동 스크롤">자동 스크롤</button>
-						<!-- 메뉴 보기 버튼 (맨 우측에 배치) -->
 						<button id="sample_scores_open" type="button" hidden title="샘플 악보 열기">샘플악보</button>
-						<button id="menu_full_toggle" class="menu-simple-only" title="전체 메뉴 보기">메뉴 보기</button>
-						<button id="fullscreen_toggle" title="전체보기 (악보만 표시)">전체보기</button>
-						<span id="page_nav" style="display: none;">
-							<button id="page_prev" title="이전 페이지">&lt;</button>
-							<input id="page_input" type="number" min="1" value="1" title="페이지 이동" style="width: 32px; text-align: center;">
-							<span id="page_indicator" style="font-size: 11px; color: var(--text-dim);"> / 1</span>
-							<button id="page_next" title="다음 페이지">&gt;</button>
-						</span>
 					</div>
 					<div class="toolbar-group" style="margin-left: auto; border-left: none;">
-						<button id="app_version" type="button" title="Version" style="font-size: 11px; font-weight: 600; color: var(--text-dim, #888); padding: 2px 6px; border-radius: 4px; background: rgba(125,125,125,0.12); border: 1px solid var(--border, rgba(125,125,125,0.2)); user-select: none; letter-spacing: 0.02em;">v1.0.828</button>
+						<button id="app_version" type="button" title="Version" style="font-size: 11px; font-weight: 600; color: var(--text-dim, #888); padding: 2px 6px; border-radius: 4px; background: rgba(125,125,125,0.12); border: 1px solid var(--border, rgba(125,125,125,0.2)); user-select: none; letter-spacing: 0.02em;">v1.0.829</button>
 					</div>
 				</div>
 
 				<div class="toolbar menu-extra">
+					<div class="toolbar-group"><a href="../converter/index.html" id="logo">NWC Viewer</a></div>
 					<!-- Layout -->
 					<div class="toolbar-group">
 						<span class="toolbar-label">레이아웃</span>
@@ -612,10 +600,6 @@
 						<button id="fit_height_btn" title="화면 높이에 맞추기" style="font-size: 11px; padding: 2px 6px;">H</button>
 					</div>
 
-					<!-- Full View & Menu Simplify Toggles -->
-					<div class="toolbar-group">
-						<button id="menu_simple_toggle" title="메뉴 간략히 (주요 컨트롤만 표시)">메뉴 간략히</button>
-					</div>
 				</div>
 				<div class="toolbar menu-extra practice-options" aria-label="연습 설정">
 					<fieldset><legend>구간 반복</legend>
@@ -653,11 +637,11 @@
 				<div id="invisible_canvas"></div>
 			</div>
 
-			<button id="fullscreen_play_toggle" type="button" title="재생 / 일시정지">재생</button>
+			<button id="fullscreen_play_toggle" type="button" title="재생" aria-label="재생">▶</button>
 			<button id="fullscreen_exit" title="전체보기 종료 (Esc)">축소</button>
 
 			<div id="footer">
-					브라우저에서 직접 처리 — 파일이 서버로 전송되지 않습니다 · v1.0.828
+					브라우저에서 직접 처리 — 파일이 서버로 전송되지 않습니다 · v1.0.829
 			</div>
 		</div>
 

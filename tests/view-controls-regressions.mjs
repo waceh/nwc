@@ -16,8 +16,15 @@ test('new visitors see one page at a time by default', () => {
   assert.doesNotMatch(html, /<option value="two-up" selected>/)
 })
 
-test('full view button is beside Menu View in the always visible toolbar', () => {
-  assert.match(html, /<button id="menu_full_toggle"[^>]*>메뉴 보기<\/button>\s*<button id="fullscreen_toggle"[^>]*>전체보기<\/button>/)
+test('the primary toolbar keeps file, playback, menu and full view in one order', () => {
+  const primary = html.slice(html.indexOf('<div class="toolbar">'), html.indexOf('<div class="toolbar menu-extra">'))
+  const controls = ['id="open"', 'id="play"', 'id="menu_toggle"', 'id="fullscreen_toggle"']
+  const positions = controls.map(control => primary.indexOf(control))
+  assert.ok(positions.every(position => position >= 0), 'primary control is missing')
+  assert.deepEqual(positions, [...positions].sort((a, b) => a - b))
+  assert.match(primary, /id="open"[^>]*aria-label="악보 파일 열기"[^>]*>\s*<svg/s)
+  assert.match(primary, /id="play"[^>]*>▶<\/button>/)
+  assert.doesNotMatch(html, /id="stop"/)
   assert.equal((html.match(/id="fullscreen_toggle"/g) || []).length, 1)
 })
 
@@ -27,7 +34,7 @@ test('full view works with both compact and expanded menus', () => {
     toggle(name, on) { if (on) classes.add(name); else classes.delete(name) },
     contains(name) { return classes.has(name) },
   }
-  const buttons = Object.fromEntries(['fullscreen_toggle', 'fullscreen_exit', 'fullscreen_play_toggle', 'menu_simple_toggle', 'menu_full_toggle'].map(id => [id, {}]))
+  const buttons = Object.fromEntries(['fullscreen_toggle', 'fullscreen_exit', 'fullscreen_play_toggle', 'menu_toggle'].map(id => [id, {}]))
   let playToggles = 0
   const context = {
     document: { body: { classList }, getElementById: id => buttons[id] ?? {}, addEventListener() {} },
@@ -42,10 +49,11 @@ test('full view works with both compact and expanded menus', () => {
   vm.runInContext(main.slice(start, end), context)
 
   for (const compact of [true, false]) {
-    buttons[compact ? 'menu_simple_toggle' : 'menu_full_toggle'].onclick()
+    if (classes.has('menu-simple') !== compact) buttons.menu_toggle.onclick()
     buttons.fullscreen_toggle.onclick()
     assert.equal(classes.has('fullscreen-mode'), true)
     assert.equal(classes.has('menu-simple'), compact)
+    assert.equal(buttons.menu_toggle.textContent, compact ? '메뉴 보기' : '메뉴 간략히')
     buttons.fullscreen_play_toggle.onclick()
     buttons.fullscreen_exit.onclick()
     assert.equal(classes.has('fullscreen-mode'), false)
@@ -68,14 +76,14 @@ test('mobile rehearsal options are configurable before entering full view', () =
 })
 
 test('mobile full view has a top-left play/pause control wired to the existing gesture handler', () => {
-  assert.match(html, /<button id="fullscreen_play_toggle"[^>]*>재생<\/button>/)
+  assert.match(html, /<button id="fullscreen_play_toggle"[^>]*>▶<\/button>/)
   assert.match(html, /body\.fullscreen-mode #fullscreen_play_toggle\s*\{[^}]*display:\s*inline-block/s)
   assert.match(html, /#fullscreen_play_toggle\s*\{[^}]*left:\s*8px/s)
   assert.match(main, /fullscreenPlayBtn\.onclick\s*=\s*handlePlayToggleGesture/)
 })
 
 test('full-view button label follows playback and end state', () => {
-  const buttons = { play: { textContent: '재생' }, fullscreen_play_toggle: { textContent: '재생' } }
+  const buttons = { play: { textContent: '▶' }, fullscreen_play_toggle: { textContent: '▶' } }
   const callbacks = {}
   const context = {
     document: { getElementById: id => buttons[id] || { value: 0, textContent: '' } },
@@ -93,10 +101,31 @@ test('full-view button label follows playback and end state', () => {
   const end = main.indexOf('// Tracks which score data', start)
   vm.runInContext(main.slice(start, end) + '\nthis.labels = [playBtn, fullscreenPlayBtn]', context)
   callbacks.state(true)
-  assert.deepEqual(Array.from(context.labels, button => button.textContent), ['일시정지', '일시정지'])
+  assert.deepEqual(Array.from(context.labels, button => button.textContent), ['■', '■'])
   callbacks.state(false)
-  assert.deepEqual(Array.from(context.labels, button => button.textContent), ['재생', '재생'])
+  assert.deepEqual(Array.from(context.labels, button => button.textContent), ['▶', '▶'])
   callbacks.state(true)
   callbacks.end()
-  assert.deepEqual(Array.from(context.labels, button => button.textContent), ['재생', '재생'])
+  assert.deepEqual(Array.from(context.labels, button => button.textContent), ['▶', '▶'])
+})
+
+test('starting playback from the toolbar enters full view after unlocking audio', () => {
+  const calls = []
+  const playBtn = {}
+  const context = {
+    playBtn, preparingPlayback: false,
+    playback: { playing: false, unlockAudio() { calls.push('unlock') } },
+    togglePlayPause() { calls.push('toggle') },
+    setFullscreenMode(on) { calls.push(['full', on]) },
+  }
+  vm.createContext(context)
+  const start = main.indexOf('function handlePlayToggleGesture()')
+  const end = main.indexOf('// Spacebar play/pause', start)
+  vm.runInContext(main.slice(start, end), context)
+  playBtn.onclick()
+  assert.deepEqual(calls, ['unlock', 'toggle', ['full', true]])
+  calls.length = 0
+  context.playback.playing = true
+  playBtn.onclick()
+  assert.deepEqual(calls, ['toggle'])
 })
