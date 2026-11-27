@@ -255,14 +255,16 @@ export function ticksToSeconds(tick, tempoMap) {
 
 // ── PlaybackController ─────────────────────────────────────────────────────
 
-const SOUNDFONT_PATH = 'soundfonts/Creative(emu10k1)8MBGMSFX.sf2'
+// No SF2 is included in this deployment. Use the bundled wavetable piano.
+// Set a path here only when the corresponding asset is shipped with the site.
+const SOUNDFONT_PATH = null
 
 /**
  * Manages a SoundFontEngine + MidiScheduler lifecycle and exposes a simple
  * transport API for the UI.
  *
- * Uses OxiSynth with a GM soundfont for full instrument support, falling back
- * to the built-in wavetable piano if loading fails.
+ * Uses the bundled wavetable piano when no SF2 is distributed. If a soundfont
+ * is configured later, OxiSynth is used with a wavetable fallback on failure.
  */
 export class PlaybackController {
 	constructor() {
@@ -276,7 +278,7 @@ export class PlaybackController {
 		this._onNoteOn = null
 		this._onNoteOff = null
 		this._speed = 1
-		this._volume = 0.08 // oxisynth (default backend) clips well before unity gain with multi-part scores
+		this._volume = 0.08 // conservative level for multi-part scores
 
 		// Solo/mute state per staff
 		// _soloStaves: Set of staff indices with solo enabled (empty = no solo = all play)
@@ -428,7 +430,7 @@ export class PlaybackController {
 	/**
 	 * Build the engine around a single, explicitly-owned AudioContext. Passing
 	 * `audioContext` in means every backend the engine ever switches to
-	 * (oxisynth → wavetable on soundfont-load failure, see _loadSoundfont())
+	 * (including a future soundfont failure fallback)
 	 * reuses this same context instead of each lazily creating its own — see
 	 * BaseBackend.audioContext in vendor/soundfont-engine. That matters
 	 * because only the context resumed inside unlockAudio()'s gesture window
@@ -440,7 +442,7 @@ export class PlaybackController {
 			'../vendor/soundfont-engine/vendor',
 			import.meta.url
 		).href
-		return new SoundFontEngine({ backend: 'oxisynth', vendorPath, audioContext })
+		return new SoundFontEngine({ backend: SOUNDFONT_PATH ? 'oxisynth' : 'wavetable', vendorPath, audioContext })
 	}
 
 	/** Create the engine if needed (reused by unlockAudio() and _ensureInit()). */
@@ -512,6 +514,10 @@ export class PlaybackController {
 	}
 
 	async _loadSoundfont() {
+		if (!SOUNDFONT_PATH) {
+			this._soundfontAttempted = true
+			return
+		}
 		if (this._soundfontLoaded || this._soundfontAttempted) return
 		if (this._soundfontPromise) return this._soundfontPromise
 

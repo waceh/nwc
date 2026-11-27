@@ -12,9 +12,21 @@ fs.writeFileSync(path.join(temp, 'package.json'), '{"type":"module"}')
 const { mixPracticeNotes } = await import(pathToFileURL(path.join(temp, 'practice.js')))
 const audio = fs.readFileSync(new URL('../viewer/src/audio.js', import.meta.url), 'utf8')
   .replace(/^import .*$/gm, '').replace(/export /g, '').replace(/import\.meta\.url/g, '"file:///test/audio.js"')
-const context = { mixPracticeNotes, console }
+const context = { mixPracticeNotes, console, URL, SoundFontEngine: class {
+  constructor(options) { this.backend = options.backend }
+} }
 vm.createContext(context)
 vm.runInContext(audio + '\nthis.Controller = PlaybackController', context)
+
+test('the deployed viewer uses the bundled piano without requesting a missing SF2', async () => {
+  const controller = new context.Controller()
+  let requests = 0
+  controller._engine = { loadSoundFont: async () => { requests++ }, setBackend() {} }
+  await controller._loadSoundfont()
+  assert.equal(requests, 0)
+  assert.equal(controller._soundfontAttempted, true)
+  assert.equal(controller._createEngine().backend, 'wavetable')
+})
 
 test('changing the rehearsal mix keeps the playback clock while replacing notes', async () => {
   const controller = new context.Controller()
