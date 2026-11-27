@@ -61,9 +61,6 @@
 				top: 8px;
 				left: 8px;
 				z-index: 200;
-				min-height: 44px;
-				min-width: 44px;
-				font-size: 18px;
 			}
 
 			body.fullscreen-mode #top,
@@ -82,10 +79,16 @@
 			}
 
 			/* Keep the four primary controls together in both menu modes. */
-			.primary-controls { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
-			.primary-controls button, #fullscreen_play_toggle, #fullscreen_exit { min-width: 44px; min-height: 44px; align-items: center; justify-content: center; }
-			.primary-controls button { display: inline-flex; width: 44px; padding: 0; }
+			.primary-toolbar { padding: 2px 8px; gap: 4px; }
+			.primary-controls { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+			.primary-controls button, #fullscreen_play_toggle, #fullscreen_exit { align-items: center; justify-content: center; }
+			.primary-controls button { display: inline-flex; width: 36px; min-width: 36px; min-height: 36px; padding: 0; }
+			#fullscreen_play_toggle, #fullscreen_exit { min-width: 44px; min-height: 44px; }
 			button svg { width: 20px; height: 20px; flex: none; }
+			.primary-controls button svg, #fullscreen_play_toggle svg, #fullscreen_exit svg { width: 16px; height: 16px; }
+			@media (pointer: coarse) {
+				.primary-controls button { width: 40px; min-width: 40px; min-height: 40px; }
+			}
 			#export_pdf svg { vertical-align: middle; margin-right: 3px; }
 			.transport-button .icon-pause { display: none; }
 			.transport-button.is-playing .icon-play { display: none; }
@@ -338,7 +341,7 @@
 				font-size: 10px;
 				color: var(--text-dim);
 			}
-			#footer #app_version { padding: 1px 5px; font-size: 10px; color: var(--text-dim); background: transparent; }
+			.primary-toolbar #app_version { margin-left: auto; padding: 4px 6px; font-size: 10px; color: var(--text-dim); background: transparent; }
 
 			a {
 				color: var(--text-dim);
@@ -364,9 +367,6 @@
 				width: min(420px, calc(100vw - 64px));
 			}
 
-			#page_nav { align-items: center; justify-content: center; gap: 5px; white-space: nowrap; padding: 0 10px 5px; }
-			#page_nav button { min-width: 36px; min-height: 32px; display: inline-flex; align-items: center; justify-content: center; }
-			#page_nav input { width: 32px; text-align: center; }
 			.practice-options { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
 			.practice-options fieldset { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; }
 			.practice-options legend { color: var(--text-dim); font-size: 11px; }
@@ -509,14 +509,8 @@
 						<button id="menu_toggle" type="button" title="연습 설정 보기" aria-label="연습 설정 보기" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2" fill="var(--surface)"/><circle cx="16" cy="12" r="2" fill="var(--surface)"/><circle cx="11" cy="18" r="2" fill="var(--surface)"/></svg></button>
 						<button id="fullscreen_toggle" type="button" title="전체보기" aria-label="전체보기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4H4v4M16 4h4v4M4 16v4h4M20 16v4h-4"/></svg></button>
 					</div>
+					<button id="app_version" type="button" title="Version">v1.0.830</button>
 				</div>
-				<div id="page_nav" style="display: none;">
-					<button id="page_prev" type="button" title="이전 페이지" aria-label="이전 페이지"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
-					<input id="page_input" type="number" min="1" value="1" title="페이지 이동" aria-label="페이지 번호">
-					<span id="page_indicator" style="font-size: 11px; color: var(--text-dim);"> / 1</span>
-					<button id="page_next" type="button" title="다음 페이지" aria-label="다음 페이지"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
-				</div>
-
 				<div class="toolbar menu-extra">
 					<div class="toolbar-group">
 						<span id="playback_time" class="time-display">0:00 / 0:00</span>
@@ -624,7 +618,7 @@
 			<button id="fullscreen_exit" type="button" title="전체보기 종료 (Esc)" aria-label="전체보기 종료"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h4V4M20 8h-4V4M4 16h4v4M20 16h-4v4"/></svg></button>
 
 			<div id="footer">
-					브라우저에서 직접 처리 — 파일이 서버로 전송되지 않습니다 · <button id="app_version" type="button" title="Version">v1.0.830</button>
+					브라우저에서 직접 처리 — 파일이 서버로 전송되지 않습니다
 			</div>
 		</div>
 

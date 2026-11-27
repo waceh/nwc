@@ -27,7 +27,7 @@ test('the primary toolbar keeps file, playback, menu and full view in one order'
     assert.ok(new RegExp(`<button id="${id}"[^>]*>[\\s\\S]*?<svg`).test(primary), `${id} needs an SVG icon`)
     assert.ok(new RegExp(`<button id="${id}"[^>]*aria-label=`).test(primary), `${id} needs an accessible name`)
   }
-  for (const id of ['volume_slider', 'speed_slider', 'octave_down', 'app_version', 'progress_bar']) {
+  for (const id of ['volume_slider', 'speed_slider', 'octave_down', 'progress_bar']) {
     assert.ok(!primary.includes(`id="${id}"`), `${id} should leave the primary row`)
   }
   assert.doesNotMatch(html, /id="stop"/)
@@ -76,9 +76,9 @@ test('mobile rehearsal options are configurable before entering full view', () =
   for (const mode of ['all', 'guide', 'minus-one']) {
     assert.ok(html.includes(`value="${mode}"`), `${mode} mix is missing`)
   }
-  const nav = html.indexOf('id="page_nav"')
-  const expandedToolbar = html.indexOf('<div class="toolbar menu-extra">')
-  assert.ok(nav > 0 && nav < expandedToolbar, 'page navigation must stay visible in the compact menu')
+  for (const id of ['page_nav', 'page_prev', 'page_next', 'page_input', 'page_indicator']) {
+    assert.ok(!html.includes(`id="${id}"`), `${id} should not take space above the score`)
+  }
   assert.ok(html.includes('id="auto_page_turn" type="checkbox" checked'), 'automatic page turning should start on')
 })
 
@@ -135,11 +135,11 @@ test('secondary practice controls keep visible values and remain in the expanded
   assert.ok(expanded.includes('>×</span>'), 'speed multiplier should use ×')
   assert.ok(expanded.includes('A–B 반복'), 'loop control should have a readable A–B label')
   assert.ok(/id="export_pdf"[^>]*>[\s\S]*?<svg[\s\S]*?PDF로 저장/.test(expanded), 'PDF export needs icon and label')
+  const primary = html.slice(html.indexOf('<div class="toolbar primary-toolbar">'), html.indexOf('<div class="toolbar menu-extra">'))
+  assert.ok(primary.includes('id="app_version"'), 'version should remain visible in the compact menu')
+  assert.equal((html.match(/id="app_version"/g) || []).length, 1, 'version button should exist once')
   const footer = html.slice(html.indexOf('<div id="footer">'), html.indexOf('</div>', html.indexOf('<div id="footer">')))
-  assert.ok(footer.includes('id="app_version"'), 'version easter egg should move into the footer')
-  for (const id of ['page_prev', 'page_next']) {
-    assert.ok(new RegExp(`<button id="${id}"[^>]*aria-label="[^"]+"[^>]*><svg`).test(html), `${id} needs a labeled chevron icon`)
-  }
+  assert.ok(!footer.includes('id="app_version"'), 'score rendering replaces the footer contents')
 })
 
 test('PDF export changes its label while retaining the download icon', async () => {

@@ -1028,7 +1028,6 @@ function updateLayoutUI() {
 	if (pageViewModeEl) pageViewModeEl.style.display = isPage ? 'inline' : 'none'
 	const exportPdfBtn = document.getElementById('export_pdf')
 	if (exportPdfBtn) exportPdfBtn.style.display = isPage ? 'inline' : 'none'
-	updatePageNavVisibility()
 
 	// Toggle background for page mode (gray canvas background)
 	const scoreDiv = document.getElementById('score')
@@ -1086,30 +1085,8 @@ if (pageViewModeSelect) {
 		setPageViewMode(pageViewModeSelect.value)
 		localStorage.setItem(PAGE_VIEW_STORAGE_KEY, pageViewModeSelect.value)
 		currentPageIdx = 0
-		updatePageNav()
-		updatePageNavVisibility()
 		if (getLayoutMode() === 'page') rerender()
 	}
-}
-
-function updatePageNavVisibility() {
-	const nav = document.getElementById('page_nav')
-	if (nav) nav.style.display = getLayoutMode() === 'page' ? 'flex' : 'none'
-}
-
-function updatePageNav() {
-	const input = document.getElementById('page_input')
-	const indicator = document.getElementById('page_indicator')
-	const prevBtn = document.getElementById('page_prev')
-	const nextBtn = document.getElementById('page_next')
-	const totalPages = window._pageGeometry?.pageCount || 1
-	if (input) {
-		input.value = currentPageIdx + 1
-		input.max = totalPages
-	}
-	if (indicator) indicator.textContent = ` / ${totalPages}`
-	if (prevBtn) prevBtn.disabled = currentPageIdx <= 0
-	if (nextBtn) nextBtn.disabled = currentPageIdx >= totalPages - 1
 }
 
 function scrollToPage(pageIdx) {
@@ -1126,14 +1103,7 @@ function scrollToPage(pageIdx) {
 		scoreElm.scrollLeft = 0
 		quickDraw(null, -scoreElm.scrollLeft, -scoreElm.scrollTop)
 	}
-	updatePageNav()
 }
-
-// Prev / Next buttons
-const pagePrevBtn = document.getElementById('page_prev')
-const pageNextBtn = document.getElementById('page_next')
-if (pagePrevBtn) pagePrevBtn.onclick = () => scrollToPage(currentPageIdx - 1)
-if (pageNextBtn) pageNextBtn.onclick = () => scrollToPage(currentPageIdx + 1)
 
 // In full view, a deliberate horizontal touch swipe flips a page.
 // Preserve ordinary scrolling when the zoomed page overflows horizontally.
@@ -1156,22 +1126,6 @@ if (pageNextBtn) pageNextBtn.onclick = () => scrollToPage(currentPageIdx + 1)
 	scoreElm?.addEventListener('touchcancel', () => { touchStart = null })
 }
 
-// Jump-to-page input
-const pageInput = document.getElementById('page_input')
-if (pageInput) {
-	pageInput.addEventListener('change', () => {
-		const totalPages = window._pageGeometry?.pageCount || 1
-		const page = Math.max(1, Math.min(totalPages, parseInt(pageInput.value, 10) || 1))
-		scrollToPage(page - 1)
-	})
-	pageInput.addEventListener('keydown', (e) => {
-		if (e.key === 'Enter') {
-			e.target.blur()  // triggers change event
-		}
-	})
-	// Prevent scroll-wheel from changing the number input (confusing UX)
-	pageInput.addEventListener('wheel', (e) => e.preventDefault(), { passive: false })
-}
 
 // ---------------------------------------------------------------------------
 // PDF export (page layout mode only)
@@ -1300,7 +1254,6 @@ function updateCurrentPageFromScroll() {
 
 	if (closestPage !== currentPageIdx) {
 		currentPageIdx = closestPage
-		updatePageNav()
 	}
 }
 
@@ -1388,10 +1341,6 @@ if (fitHeightBtn) {
 			lastRenderTs = window.__renderComplete.ts
 			if (getZoomFitMode() !== 'none') {
 				requestAnimationFrame(() => applyZoomFit())
-			}
-			// Update page nav in single-page mode
-			if (getPageViewMode() === 'single-page' && getLayoutMode() === 'page') {
-				updatePageNav()
 			}
 		}
 		requestAnimationFrame(checkRender)
