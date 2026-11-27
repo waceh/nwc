@@ -8,7 +8,8 @@ function highlighter() {
   let paints = 0;
   const context = {
     getFontSize: () => 28,
-    window: { quickDraw: () => paints++ },
+    getZoomLevel: () => 1, getLayoutMode: () => 'page', getPageViewMode: () => 'single-page',
+    window: { quickDraw: () => paints++, _pageGeometry: { pagePositions: [{ y: 0 }, { y: 1100 }], pageHeight: 1000, interPageGap: 100, pageCount: 2 } },
     buildTempoMap: () => [], ticksToSeconds: t => t,
     buildPlaybackSegments: () => [
       { startTick: 0, endTick: 4 }, { startTick: 0, endTick: 4 }, { startTick: 4, endTick: 8 },
@@ -48,6 +49,24 @@ test('repeat cursor does not jump before the boundary', () => {
   ];
   assert.equal(h._getCursorPosition(0.95).x, 100);
   assert.equal(h._getCursorPosition(1).x, 10);
+});
+
+test('single-page playback turns ahead only while automatic page turning is enabled', () => {
+  const { h } = highlighter();
+  const turns = [];
+  h._container = { scrollTop: 0, clientHeight: 700, scrollTo(options) { turns.push(options); this.scrollTop = options.top; } };
+  h._timeIndex = [
+    { time: 0, x: 10, y: 100, sysIdx: 0, segIdx: 0 },
+    { time: 1, x: 10, y: 1200, sysIdx: 1, segIdx: 0 },
+  ];
+  h._currentTime = 0.5;
+  h.setAutoPageTurn(true);
+  h._autoScroll();
+  assert.equal(turns.length, 1);
+  h.setAutoPageTurn(false);
+  h._container.scrollTop = 0;
+  h._autoScroll();
+  assert.equal(turns.length, 1);
 });
 
 function clock(notes) {

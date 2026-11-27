@@ -9,6 +9,7 @@
 import { SoundFontEngine, MidiScheduler } from '../vendor/soundfont-engine/src/index.js'
 import { interpret } from './interpreter.js'
 import { buildPlaybackSegments } from './playback-order.js'
+import { mixPracticeNotes } from './practice.js'
 
 // ── Pitch helpers ──────────────────────────────────────────────────────────
 
@@ -282,6 +283,8 @@ export class PlaybackController {
 		// _muteStaves: Set of staff indices that are muted
 		this._soloStaves = new Set()
 		this._muteStaves = new Set()
+		this._practiceSelection = null
+		this._practiceMode = 'all'
 		this._allNotes = []   // unfiltered notes from last load
 		this._scoreData = null // last loaded score data
 	}
@@ -333,6 +336,11 @@ export class PlaybackController {
 		this._muteStaves.clear()
 	}
 
+	setPracticeSelection(indices, mode = 'all') {
+		this._practiceSelection = new Set(indices)
+		this._practiceMode = mode
+	}
+
 	/**
 	 * Filter notes based on current solo/mute state.
 	 * - If any staves are soloed, only those staves play (mute is ignored for soloed).
@@ -341,10 +349,12 @@ export class PlaybackController {
 	_filterNotes(notes) {
 		const hasSolo = this._soloStaves.size > 0
 		const octaveDelta = (this._octaveShift || 0) * 12
-		const filtered = notes.filter(n => {
-			if (hasSolo) return this._soloStaves.has(n.staffIndex)
-			return !this._muteStaves.has(n.staffIndex)
-		})
+		const filtered = this._practiceSelection
+			? mixPracticeNotes(notes, this._practiceSelection, this._practiceMode)
+			: notes.filter(n => {
+				if (hasSolo) return this._soloStaves.has(n.staffIndex)
+				return !this._muteStaves.has(n.staffIndex)
+			})
 		if (!octaveDelta) return filtered
 		return filtered.map(n => {
 			if (n.channel === 9) return n

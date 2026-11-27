@@ -47,3 +47,17 @@ test('full view works with both compact and expanded menus', () => {
     assert.equal(classes.has('fullscreen-mode'), false)
   }
 })
+
+test('mobile rehearsal options are configurable before entering full view', () => {
+  for (const id of ['loop_enabled', 'loop_start', 'loop_end', 'count_in', 'start_note',
+    'focus_part', 'auto_page_turn']) {
+    assert.ok(html.includes(`id="${id}"`), `${id} is missing`)
+  }
+  for (const mode of ['all', 'guide', 'minus-one']) {
+    assert.ok(html.includes(`value="${mode}"`), `${mode} mix is missing`)
+  }
+  const nav = html.indexOf('id="page_nav"')
+  const expandedToolbar = html.indexOf('<div class="toolbar menu-extra">')
+  assert.ok(nav > 0 && nav < expandedToolbar, 'page navigation must stay visible in the compact menu')
+  assert.ok(html.includes('id="auto_page_turn" type="checkbox" checked'), 'automatic page turning should start on')
+})

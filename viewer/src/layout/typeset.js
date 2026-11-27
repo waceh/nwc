@@ -2,6 +2,7 @@ import { getFontSize, getZoomLevel, getLayoutMode, getPageDimensions, getPageMar
 import { layoutBeaming } from './beams.js'
 import { layoutTies } from './ties.js'
 import { resizeToFit, DynamicMarking, ArticulationMark, Hairpin, VoltaBracket, TupletBracket, Glyph, PartialTie, getCode, glyphPathGet } from '../drawing.js'
+import { buildStaffFocusBands } from '../practice.js'
 import { CLEF_LEFT_MARGIN, AFTER_CLEF_GAP, AFTER_KEYSIG_GAP, AFTER_TIMESIG_GAP, AFTER_BARLINE_GAP, BARLINE_NOTE_EXTRA, headerGap } from '../engraving-rules.js'
 
 // based on nwc music json representation,
@@ -964,6 +965,16 @@ function quickDraw(dataOrContext, x, y) {
 		_drawPageBackgrounds(ctx, _pageGeometry)
 	}
 	drawing.draw(ctx)
+	if (_focusedStaves && _focusedStaves.size > 0 && _focusedStaves.size < _staffCount) {
+		ctx.save()
+		ctx.fillStyle = 'rgba(255, 255, 255, 0.55)'
+		for (const band of _staffFocusBands) {
+			if (!band.shared && !_focusedStaves.has(band.staffIndex)) {
+				ctx.fillRect(band.startX, band.topY, band.endX - band.startX, band.bottomY - band.topY)
+			}
+		}
+		ctx.restore()
+	}
 	// Draw playback highlights on top of the score (cursor + active notes).
 	// The highlighter is set externally via setPlaybackHighlighter().
 	if (_playbackHighlighter) {
@@ -1007,6 +1018,13 @@ let _systemGeometry = null
 // Measure geometry — set by all layout modes after _systemGeometry is built.
 // Flat array of { startX, endX, topY, bottomY } per measure, for bar highlighting.
 let _measureGeometry = null
+let _staffFocusBands = []
+let _staffCount = 0
+let _focusedStaves = null
+
+function setFocusedStaves(indices) {
+	_focusedStaves = indices == null ? null : new Set(indices)
+}
 
 /** Register the playback highlighter so quickDraw can call drawHighlights(). */
 function setPlaybackHighlighter(highlighter) {
@@ -1493,6 +1511,8 @@ function score(dataOrContext) {
 	} else {
 		scoreScrollLayout(drawing, data, staves, stavePointers, ctx, canvas)
 	}
+	_staffCount = staves.length
+	_staffFocusBands = buildStaffFocusBands(_systemGeometry, staves.map((_, index) => getStaffY(index)), getFontSize())
 }
 
 /**
@@ -3651,4 +3671,4 @@ function clefFromString(str) {
 	}
 }
 
-export { score, computeSystemBreaks, dpOptimalBreaks, computeBadness, buildBarlineMap, computeJustifyX, setPlaybackHighlighter, setInkBleedRenderer, reflowIfSparse }
+export { score, computeSystemBreaks, dpOptimalBreaks, computeBadness, buildBarlineMap, computeJustifyX, setPlaybackHighlighter, setFocusedStaves, setInkBleedRenderer, reflowIfSparse }

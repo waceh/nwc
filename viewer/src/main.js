@@ -6,7 +6,7 @@ import { decodeMidiArrayBuffer, isMidiFile } from './midi-import.js'
 import { interpret } from './interpreter.js'
 import { setup, resizeToFit } from './drawing.js'
 import { exportLilypond } from './exporter.js'
-import { score, setPlaybackHighlighter } from './layout/typeset.js'
+import { score, setPlaybackHighlighter, setFocusedStaves } from './layout/typeset.js'
 import { blank } from './editing.js'
 import { MusicContext } from './context.js'
 import { PlaybackController } from './audio.js'
@@ -14,6 +14,9 @@ import { PlaybackHighlighter } from './playback-highlight.js'
 import { PianoKeyboard } from './piano-keyboard.js'
 import { parseMusicXML, isMusicXMLFile } from './musicxml-import.js'
 import { initSampleScores } from './sample-scores.js'
+import { buildPlaybackSegments } from './playback-order.js'
+import { buildTempoMap, ticksToSeconds } from './audio.js'
+import { collectMeasures, buildMeasureOccurrences, resolveLoop, swipePageDirection, leadInPlan, scheduleLeadIn } from './practice.js'
 
 /**********************
  *
@@ -353,6 +356,10 @@ const timeLabel = document.getElementById('playback_time')
 let _seeking = false
 
 playback.onTime((t, dur) => {
+	if (practiceLoop && playback.playing && t >= practiceLoop.end - 0.03) {
+		playback.seek(practiceLoop.start)
+		t = practiceLoop.start
+	}
 	if (!_seeking) {
 		progressBar.value = dur > 0 ? t / dur : 0
 	}
@@ -392,20 +399,110 @@ playback.onEnd(() => {
 // score itself changes, so the next play still (re)loads fresh data.
 let _loadedPlaybackData = null
 let _pendingSeekTime = null
+let practiceMeasures = []
+let practiceOccurrences = []
+let practiceLoop = null
+let playRequestId = 0
+let leadInTimer = null
+let leadInResolve = null
+let cancelLeadInAudio = null
+let preparingPlayback = false
+
+function cancelLeadIn() {
+	if (leadInTimer != null) clearTimeout(leadInTimer)
+	leadInTimer = null
+	cancelLeadInAudio?.()
+	cancelLeadInAudio = null
+	leadInResolve?.()
+	leadInResolve = null
+}
+
+function updatePracticeTimeline(data) {
+	const staves = data?.score?.staves || []
+	const segments = buildPlaybackSegments(staves)
+	const maxTick = segments.reduce((max, seg) => Math.max(max, seg.endTick), 0)
+	practiceMeasures = collectMeasures(staves, maxTick)
+	const tempoMap = buildTempoMap(staves)
+	practiceOccurrences = buildMeasureOccurrences(practiceMeasures, segments, tick => ticksToSeconds(tick, tempoMap))
+	const max = Math.max(1, practiceMeasures.length)
+	for (const input of [document.getElementById('loop_start'), document.getElementById('loop_end')]) {
+		if (input) input.max = max
+	}
+	if (document.getElementById('loop_end') && !document.getElementById('loop_enabled')?.checked) {
+		document.getElementById('loop_end').value = max
+	}
+	updatePracticeLoop()
+}
+
+function updatePracticeLoop() {
+	practiceLoop = null
+	if (!document.getElementById('loop_enabled')?.checked) return
+	const start = Number(document.getElementById('loop_start')?.value)
+	const end = Number(document.getElementById('loop_end')?.value)
+	if (start < 1 || end < start || end > practiceMeasures.length) return
+	practiceLoop = resolveLoop(practiceOccurrences, start, end, playback.currentTime)
+}
+
+async function playLeadIn(data, startTime, requestId) {
+	const countIn = !!document.getElementById('count_in')?.checked
+	const startNoteEnabled = !!document.getElementById('start_note')?.checked
+	if (!countIn && !startNoteEnabled) return
+	const selected = new Set([...partCheckboxContainer.querySelectorAll('input[type="checkbox"]')]
+		.filter(cb => cb.checked).map(cb => Number(cb.dataset.staffIndex)))
+	const reference = startNoteEnabled
+		? playback._allNotes.find(note => selected.has(note.staffIndex) && note.time >= startTime - 0.01)?.midi ?? null
+		: null
+	const staves = data?.score?.staves || []
+	const bpm = buildTempoMap(staves)[0]?.bpm || 120
+	const signature = staves[0]?.tokens?.find(token => token.type === 'TimeSignature')
+	const beats = Number(signature?.group) || 4
+	const plan = leadInPlan({ startNote: reference, countIn, bpm, beats })
+	if (!plan.duration || requestId !== playRequestId) return
+	cancelLeadInAudio = scheduleLeadIn(playback._engine.audioContext, plan, reference)
+	await new Promise(resolve => {
+		leadInResolve = resolve
+		leadInTimer = setTimeout(resolve, plan.duration * 1000)
+	})
+	leadInTimer = null
+	leadInResolve = null
+	cancelLeadInAudio = null
+}
 
 async function togglePlayPause() {
 	if (playback.playing) {
+		playRequestId++
 		playback.pause()
 	} else {
-		const data = scoreManager.getData()
-		if (data !== _loadedPlaybackData) {
-			await playback.load(data)
-			highlighter.setNoteEvents(playback.getFilteredNoteEvents())
-			_loadedPlaybackData = data
-			if (_pendingSeekTime != null) playback.seek(_pendingSeekTime)
-			_pendingSeekTime = null
+		if (preparingPlayback) {
+			playRequestId++
+			cancelLeadIn()
+			return
 		}
-		await playback.play()
+		const requestId = ++playRequestId
+		preparingPlayback = true
+		try {
+			const data = scoreManager.getData()
+			if (data !== _loadedPlaybackData) {
+				await playback.load(data)
+				if (requestId !== playRequestId) return
+				highlighter.setNoteEvents(playback.getFilteredNoteEvents())
+				_loadedPlaybackData = data
+				if (_pendingSeekTime != null) playback.seek(_pendingSeekTime)
+				_pendingSeekTime = null
+			}
+			updatePracticeLoop()
+			if (practiceLoop && (playback.currentTime < practiceLoop.start || playback.currentTime >= practiceLoop.end)) {
+				playback.seek(practiceLoop.start)
+				highlighter.seek(practiceLoop.start)
+			}
+			if (playback.currentTime <= 0.01 || (practiceLoop && Math.abs(playback.currentTime - practiceLoop.start) < 0.01)) {
+				await playLeadIn(data, playback.currentTime, requestId)
+			}
+			if (requestId !== playRequestId) return
+			await playback.play()
+		} finally {
+			preparingPlayback = false
+		}
 	}
 }
 
@@ -432,6 +529,8 @@ document.addEventListener('keydown', (e) => {
 })
 
 stopBtn.onclick = () => {
+	playRequestId++
+	cancelLeadIn()
 	_pendingSeekTime = null
 	playback.stop()
 	highlighter.stop()
@@ -507,19 +606,25 @@ const partCheckboxContainer = document.getElementById('part_checkbox_container')
 async function applyPartSelection() {
 	if (!partCheckboxContainer) return
 	const checkboxes = partCheckboxContainer.querySelectorAll('input[type="checkbox"]')
-	playback.clearSoloMute()
+	const selected = []
 	let anyUnchecked = false
 	checkboxes.forEach((cb) => {
 		const staffIndex = parseInt(cb.dataset.staffIndex, 10)
 		const label = cb.closest('label')
 		if (cb.checked) {
+			selected.push(staffIndex)
 			if (label) label.style.opacity = '1'
 		} else {
 			if (label) label.style.opacity = '0.45'
-			playback.setMute(staffIndex, true)
 			anyUnchecked = true
 		}
 	})
+	const mode = document.querySelector('input[name="practice_mix"]:checked')?.value || 'all'
+	playback.setPracticeSelection(selected, mode)
+	setFocusedStaves(document.getElementById('focus_part')?.checked ? selected : null)
+	const hint = document.getElementById('practice_hint')
+	if (hint) hint.textContent = mode === 'minus-one' && !anyUnchecked
+		? '선택 파트 제외를 쓰려면 본인 파트만 체크하세요.' : ''
 
 	const allChecked = !anyUnchecked
 	if (partsAllBtn) {
@@ -529,6 +634,8 @@ async function applyPartSelection() {
 
 	await playback._reloadFiltered()
 	highlighter.setNoteEvents(playback.getFilteredNoteEvents())
+	const scoreElm = document.getElementById('score')
+	window.quickDraw?.(null, -(scoreElm?.scrollLeft || 0), -(scoreElm?.scrollTop || 0))
 }
 
 function updatePartCheckboxes(data) {
@@ -571,7 +678,19 @@ function updatePartCheckboxes(data) {
 		partsAllBtn.style.color = 'var(--text)'
 		partsAllBtn.title = '전체 파트 선택 해제'
 	}
+	applyPartSelection()
 }
+
+document.querySelectorAll('input[name="practice_mix"]').forEach(radio => {
+	radio.addEventListener('change', () => applyPartSelection())
+})
+document.getElementById('focus_part')?.addEventListener('change', () => applyPartSelection())
+for (const id of ['loop_enabled', 'loop_start', 'loop_end']) {
+	document.getElementById(id)?.addEventListener('change', updatePracticeLoop)
+}
+document.getElementById('auto_page_turn')?.addEventListener('change', event => {
+	highlighter.setAutoPageTurn(event.target.checked)
+})
 
 if (partsAllBtn) {
 	partsAllBtn.onclick = async () => {
@@ -706,6 +825,7 @@ const rerender = () => {
 
 				// Update highlighter with new layout positions
 				highlighter.setScore(data)
+				updatePracticeTimeline(data)
 			},
 			null,
 			(canvas) => {
@@ -719,7 +839,7 @@ const rerender = () => {
 		)
 	} catch (error) {
 		console.error('Rendering failed:', error)
-		alert(`Error rendering score: ${error.message}\n\nSee DevTools console for the full stack trace.`)
+		showFileError(error, window.__currentFile, !isMusicXMLFile(window._lastPayload, window.__currentFile) && !isMidiFile(window._lastPayload))
 	}
 }
 
@@ -751,6 +871,12 @@ function updateScoreInfoBanner(info) {
 }
 
 function setDataAndRender(_data) {
+	playRequestId++
+	cancelLeadIn()
+	const loopStartInput = document.getElementById('loop_start')
+	const loopEndInput = document.getElementById('loop_end')
+	if (loopStartInput) loopStartInput.value = 1
+	if (loopEndInput) loopEndInput.value = 1
 	// Stop existing playback & clear keyboard when loading a new score
 	if (playback) {
 		playback.stop()
@@ -780,9 +906,26 @@ function setDataAndRender(_data) {
 }
 
 let loadGeneration = 0
+function showFileError(error, filename, canRetry = false) {
+	const panel = document.getElementById('file_error')
+	const message = document.getElementById('file_error_text')
+	const retry = document.getElementById('retry_parser')
+	if (!panel || !message) return
+	message.textContent = `${filename || '파일'}을 열 수 없습니다: ${error?.message || error}`
+	if (retry) retry.hidden = !canRetry
+	panel.style.display = 'flex'
+	if (document.body.classList.contains('fullscreen-mode')) setFullscreenMode(false)
+}
+
+function clearFileError() {
+	const panel = document.getElementById('file_error')
+	if (panel) panel.style.display = 'none'
+}
+
 function processData(payload, filename) {
 	const currentLoad = ++loadGeneration
 	try {
+		clearFileError()
 		window._lastPayload = payload
 		window.__currentFile = filename || '(unknown)'
 		window.__renderComplete = null
@@ -797,7 +940,7 @@ function processData(payload, filename) {
 			}).catch(error => {
 				if (currentLoad !== loadGeneration) return
 				console.error('Failed to parse MusicXML file:', error)
-				alert(`Error loading MusicXML file: ${error.message}\n\nSee DevTools console for the full stack trace.`)
+				showFileError(error, filename)
 			})
 			return
 		}
@@ -814,13 +957,14 @@ function processData(payload, filename) {
 		// Log the full stack so the root cause is visible in DevTools, then
 		// surface a user-readable message.  We deliberately do NOT catch errors
 		// from rerender() here — those are caught inside rerender() itself.
-		alert(`Error loading file: ${error.message}\n\nSee DevTools console for the full stack trace.`)
+		showFileError(error, filename, !isMidiFile(payload) && !isMusicXMLFile(payload, filename))
 	}
 }
 
 
 window.rerender = rerender
 window.processData = processData
+window.showFileError = showFileError
 window.setDataAndRender = setDataAndRender
 window.playback = playback
 window.highlighter = highlighter
@@ -844,6 +988,8 @@ function toggleParser() {
 
 const parserBtn = document.getElementById('parser_toggle')
 if (parserBtn) parserBtn.onclick = toggleParser
+document.getElementById('retry_parser')?.addEventListener('click', toggleParser)
+document.getElementById('dismiss_file_error')?.addEventListener('click', clearFileError)
 
 // Restore persisted parser preference — defaults to 새 파서 (the robust
 // lib/nwc2xml parser) unless the user has explicitly switched before.
@@ -985,6 +1131,27 @@ const pagePrevBtn = document.getElementById('page_prev')
 const pageNextBtn = document.getElementById('page_next')
 if (pagePrevBtn) pagePrevBtn.onclick = () => scrollToPage(currentPageIdx - 1)
 if (pageNextBtn) pageNextBtn.onclick = () => scrollToPage(currentPageIdx + 1)
+
+// In full view, a deliberate horizontal touch swipe flips a page.
+// Preserve ordinary scrolling when the zoomed page overflows horizontally.
+{
+	const scoreElm = document.getElementById('score')
+	let touchStart = null
+	scoreElm?.addEventListener('touchstart', event => {
+		const touch = event.changedTouches[0]
+		touchStart = event.touches.length === 1 && touch ? { x: touch.clientX, y: touch.clientY } : null
+	})
+	scoreElm?.addEventListener('touchend', event => {
+		if (!touchStart || !event.changedTouches[0]) return
+		const { x, y } = touchStart
+		touchStart = null
+		if (!document.body.classList.contains('fullscreen-mode') || getLayoutMode() !== 'page' || getPageViewMode() !== 'single-page') return
+		const touch = event.changedTouches[0]
+		const direction = swipePageDirection(touch.clientX - x, touch.clientY - y, scoreElm.scrollWidth > scoreElm.clientWidth + 8)
+		if (direction) scrollToPage(currentPageIdx + direction)
+	})
+	scoreElm?.addEventListener('touchcancel', () => { touchStart = null })
+}
 
 // Jump-to-page input
 const pageInput = document.getElementById('page_input')

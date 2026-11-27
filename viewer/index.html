@@ -364,6 +364,17 @@
 				padding: 24px;
 				width: min(420px, calc(100vw - 64px));
 			}
+
+			#page_nav { align-items: center; gap: 3px; white-space: nowrap; }
+			#page_nav button { min-width: 28px; min-height: 28px; }
+			.practice-options { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+			.practice-options fieldset { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; }
+			.practice-options legend { color: var(--text-dim); font-size: 11px; }
+			.practice-options label { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+			.practice-options input[type="number"] { width: 42px; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 4px; }
+			#practice_hint { color: #fbbf24; font-size: 11px; }
+			#file_error { display: none; margin: 4px 10px; padding: 8px; border: 1px solid #b91c1c; border-radius: 5px; background: #3b1717; color: #fff; }
+			#file_error { flex-wrap: wrap; align-items: center; gap: 8px; }
 			#sample_scores_dialog::backdrop { background: rgba(0, 0, 0, 0.65); }
 			#sample_scores_dialog h2 { margin: 0 0 16px; font-size: 18px; }
 			#sample_scores_dialog p { color: var(--text-dim); }
@@ -538,9 +549,15 @@
 						<button id="sample_scores_open" type="button" hidden title="샘플 악보 열기">샘플악보</button>
 						<button id="menu_full_toggle" class="menu-simple-only" title="전체 메뉴 보기">메뉴 보기</button>
 						<button id="fullscreen_toggle" title="전체보기 (악보만 표시)">전체보기</button>
+						<span id="page_nav" style="display: none;">
+							<button id="page_prev" title="이전 페이지">&lt;</button>
+							<input id="page_input" type="number" min="1" value="1" title="페이지 이동" style="width: 32px; text-align: center;">
+							<span id="page_indicator" style="font-size: 11px; color: var(--text-dim);"> / 1</span>
+							<button id="page_next" title="다음 페이지">&gt;</button>
+						</span>
 					</div>
 					<div class="toolbar-group" style="margin-left: auto; border-left: none;">
-						<button id="app_version" type="button" title="Version" style="font-size: 11px; font-weight: 600; color: var(--text-dim, #888); padding: 2px 6px; border-radius: 4px; background: rgba(125,125,125,0.12); border: 1px solid var(--border, rgba(125,125,125,0.2)); user-select: none; letter-spacing: 0.02em;">v1.0.825</button>
+						<button id="app_version" type="button" title="Version" style="font-size: 11px; font-weight: 600; color: var(--text-dim, #888); padding: 2px 6px; border-radius: 4px; background: rgba(125,125,125,0.12); border: 1px solid var(--border, rgba(125,125,125,0.2)); user-select: none; letter-spacing: 0.02em;">v1.0.826</button>
 					</div>
 				</div>
 
@@ -564,12 +581,6 @@
 							<option value="two-up">두 페이지씩</option>
 							<option value="horizontal">가로로 보기</option>
 						</select>
-						<span id="page_nav" style="display: none;">
-							<button id="page_prev" title="이전 페이지" style="font-size: 11px; padding: 2px 6px;">&lt;</button>
-							<input id="page_input" type="number" min="1" value="1" title="페이지 이동" style="width: 32px; text-align: center; font-size: 11px; padding: 1px 2px; -moz-appearance: textfield; border: 1px solid var(--border, #ccc); border-radius: 3px;">
-							<span id="page_indicator" style="font-size: 11px; color: var(--text-dim);"> / 1</span>
-							<button id="page_next" title="다음 페이지" style="font-size: 11px; padding: 2px 6px;">&gt;</button>
-						</span>
 						<a href="../converter/index.html" style="text-decoration: none;"><button id="convert_btn" title="NWC를 MusicXML/MIDI로 변환">Convert</button></a>
 						<button id="export_pdf" style="display: none;" title="현재 악보를 PDF 파일로 저장">PDF로 저장</button>
 					</div>
@@ -591,6 +602,28 @@
 						<button id="menu_simple_toggle" title="메뉴 간략히 (주요 컨트롤만 표시)">메뉴 간략히</button>
 					</div>
 				</div>
+				<div class="toolbar menu-extra practice-options" aria-label="연습 설정">
+					<fieldset><legend>구간 반복</legend>
+						<label><input id="loop_enabled" type="checkbox">사용</label>
+						<label>시작 <input id="loop_start" type="number" min="1" value="1"></label>
+						<label>끝 <input id="loop_end" type="number" min="1" value="1"></label>
+					</fieldset>
+					<fieldset><legend>재생 준비</legend>
+						<label><input id="count_in" type="checkbox">카운트인</label>
+						<label><input id="start_note" type="checkbox">시작음 듣기</label>
+					</fieldset>
+					<fieldset><legend>파트 소리</legend>
+						<label><input type="radio" name="practice_mix" value="all" checked>선택 파트</label>
+						<label><input type="radio" name="practice_mix" value="guide">선택 파트 강조</label>
+						<label><input type="radio" name="practice_mix" value="minus-one">선택 파트 제외</label>
+						<span id="practice_hint" role="status"></span>
+					</fieldset>
+					<fieldset><legend>악보 보기</legend>
+						<label><input id="focus_part" type="checkbox">선택 파트 강조</label>
+						<label><input id="auto_page_turn" type="checkbox" checked>자동 페이지 넘김</label>
+					</fieldset>
+				</div>
+				<div id="file_error" role="alert"><span id="file_error_text"></span><button id="retry_parser" type="button">다른 파서로 다시 열기</button><button id="dismiss_file_error" type="button">닫기</button></div>
 
 				<!-- Score Title & Composer Info Banner (별도 칸) -->
 				<div id="score_info_banner" class="score-info-banner" style="display: none;">
@@ -608,7 +641,7 @@
 			<button id="fullscreen_exit" title="전체보기 종료 (Esc)">축소</button>
 
 			<div id="footer">
-					브라우저에서 직접 처리 — 파일이 서버로 전송되지 않습니다 · v1.0.825
+					브라우저에서 직접 처리 — 파일이 서버로 전송되지 않습니다 · v1.0.826
 			</div>
 		</div>
 

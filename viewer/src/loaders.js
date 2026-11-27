@@ -45,6 +45,10 @@ function readFile(file) {
 		console.log(event)
 		processData(arraybuffer, file.name)
 	}
+	reader.onerror = function () {
+		console.error('Failed to read file:', reader.error)
+		window.showFileError?.(reader.error || new Error('파일을 읽을 수 없습니다'), file.name)
+	}
 	reader.readAsArrayBuffer(file)
 }
 

@@ -21,6 +21,7 @@ globalThis.smuflFont = { unitsPerEm: 1000, charToGlyph: () => ({ advanceWidth: 4
 const { decodeNwcArrayBuffer, setUseNewParser } = await load('src/nwc.js')
 const { interpret } = await load('src/interpreter.js')
 const { buildPlaybackSegments } = await load('src/playback-order.js')
+const { collectMeasures, buildMeasureOccurrences, resolveLoop } = await load('src/practice.js')
 const { score } = await load('src/layout/typeset.js')
 const { setLayoutMode } = await load('src/constants.js')
 const { parseNWCTxt } = await load('lib/nwc2xml/nwctxt-parser.js')
@@ -172,6 +173,25 @@ for (const [name, count, digest] of [
     assert.equal(createHash('sha256').update(JSON.stringify(signature)).digest('hex'), digest)
   })
 }
+
+test('choir samples retain repeat-aware measure ranges for rehearsal looping', () => {
+  setUseNewParser(true)
+  for (const name of ["One Call Away - Dad's Harmony.nwc", 'the blenders-you.nwc']) {
+    const data = quiet(() => {
+      const result = decodeNwcArrayBuffer(fs.readFileSync(new URL('../viewer/samples/' + name, import.meta.url)))
+      interpret(result)
+      return result
+    })
+    const segments = buildPlaybackSegments(data.score.staves)
+    const maxTick = Math.max(...segments.map(segment => segment.endTick))
+    const measures = collectMeasures(data.score.staves, maxTick)
+    const occurrences = buildMeasureOccurrences(measures, segments, tick => tick)
+    assert.ok(measures.length > 50, name)
+    assert.ok(occurrences.length >= measures.length, name)
+    assert.ok(occurrences.every(item => item.end > item.start), name)
+    assert.ok(resolveLoop(occurrences, 1, 2, 0), name)
+  }
+})
 
 for (const mode of [true, false]) {
   test(`ties match sounding pitch under key signatures and repeated accidentals (${mode ? 'new' : 'legacy'})`, () => {

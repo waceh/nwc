@@ -8,7 +8,7 @@
  * paint highlights and cursor on top.
  */
 
-import { getFontSize, getZoomLevel, getLayoutMode } from './constants.js'
+import { getFontSize, getZoomLevel, getLayoutMode, getPageViewMode } from './constants.js'
 import { buildTempoMap, ticksToSeconds } from './audio.js'
 import { buildPlaybackSegments } from './playback-order.js'
 
@@ -60,6 +60,8 @@ export class PlaybackHighlighter {
 
 		// Auto-scroll: enabled by default
 		this._autoScrollEnabled = true
+		this._autoPageTurnEnabled = true
+		this._autoPageTarget = -1
 
 		// Snap-to-notes: when true, cursor X locks to the active notehead
 		// instead of interpolating smoothly.  Off by default so the cursor
@@ -89,6 +91,7 @@ export class PlaybackHighlighter {
 	 * @param {object} data - The score data object (data.score.staves)
 	 */
 	setScore(data) {
+		this._autoPageTarget = -1
 		const staves = data.score?.staves
 		if (!staves || staves.length === 0) {
 			this._timeIndex = []
@@ -327,6 +330,7 @@ export class PlaybackHighlighter {
 
 	/** Display a seek position immediately, including before first playback. */
 	seek(time) {
+		this._autoPageTarget = -1
 		this.updateTime(time)
 		if (!this._running) this._paused = true
 		this._repaintScore()
@@ -371,6 +375,11 @@ export class PlaybackHighlighter {
 
 	/** Whether auto-scroll is currently enabled. */
 	get autoScrollEnabled() { return this._autoScrollEnabled }
+
+	setAutoPageTurn(enabled) {
+		this._autoPageTurnEnabled = !!enabled
+		this._autoPageTarget = -1
+	}
 
 	// ── Snap-to-notes ─────────────────────────────────────────────────────
 
@@ -424,7 +433,7 @@ export class PlaybackHighlighter {
 	_tick() {
 		if (!this._running) return
 		this._repaintScore()
-		if (this._autoScrollEnabled) this._autoScroll()
+			if (this._autoScrollEnabled || this._autoPageTurnEnabled) this._autoScroll()
 		this._rafId = requestAnimationFrame(() => this._tick())
 	}
 
@@ -845,6 +854,22 @@ export class PlaybackHighlighter {
 		const scoreElm = this._container
 		const zoom = getZoomLevel()
 		const layoutMode = getLayoutMode()
+		if (layoutMode === 'page' && getPageViewMode() === 'single-page') {
+			if (!this._autoPageTurnEnabled) return
+			const pages = window._pageGeometry?.pagePositions
+			if (!pages?.length) return
+			const ahead = this._getCursorPosition(this._currentTime + 0.65) || pos
+			let pageIndex = 0
+			for (let i = 1; i < pages.length; i++) {
+				if (ahead.y >= pages[i].y) pageIndex = i
+			}
+			if (pageIndex !== this._autoPageTarget) {
+				this._autoPageTarget = pageIndex
+				scoreElm.scrollTo({ top: Math.max(0, (pages[pageIndex].y - window._pageGeometry.interPageGap / 2) * zoom), behavior: 'smooth' })
+			}
+			return
+		}
+		if (!this._autoScrollEnabled) return
 
 		if (layoutMode === 'wrap' || layoutMode === 'page') {
 			// Wrap and page modes both stack systems/pages vertically — scroll
