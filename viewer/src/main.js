@@ -779,7 +779,9 @@ function setDataAndRender(_data) {
 	highlighter.stop()
 }
 
+let loadGeneration = 0
 function processData(payload, filename) {
+	const currentLoad = ++loadGeneration
 	try {
 		window._lastPayload = payload
 		window.__currentFile = filename || '(unknown)'
@@ -789,9 +791,11 @@ function processData(payload, filename) {
 		if (isMusicXMLFile(payload, filename)) {
 			console.log('Detected MusicXML file:', filename)
 			parseMusicXML(payload, filename).then(data => {
+				if (currentLoad !== loadGeneration) return
 				console.log('MusicXML parsed:', data)
 				setDataAndRender(data)
 			}).catch(error => {
+				if (currentLoad !== loadGeneration) return
 				console.error('Failed to parse MusicXML file:', error)
 				alert(`Error loading MusicXML file: ${error.message}\n\nSee DevTools console for the full stack trace.`)
 			})

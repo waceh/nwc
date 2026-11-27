@@ -129,7 +129,7 @@ test('the blenders-you sample stays aligned across all 127 barlines', async () =
     const { decodeNwcArrayBuffer } = await import(pathToFileURL(join(temp, 'src/nwc.js')));
     const { interpret } = await import(pathToFileURL(join(temp, 'src/interpreter.js')));
     console.log = () => {};
-    const data = decodeNwcArrayBuffer(fs.readFileSync(new URL('../nwc/the blenders-you.nwc', import.meta.url)));
+    const data = decodeNwcArrayBuffer(fs.readFileSync(new URL('../viewer/samples/the blenders-you.nwc', import.meta.url)));
     interpret(data);
     const bars = data.score.staves.map(s => s.tokens.filter(t => t.type === 'Barline'));
     assert.equal(bars[0].length, 127);

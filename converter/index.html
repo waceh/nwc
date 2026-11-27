@@ -217,7 +217,7 @@
 </head>
 <body>
 
-  <div style="position: fixed; top: 16px; right: 20px; font-size: 11px; font-weight: 600; color: #888; padding: 2px 6px; border-radius: 4px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); user-select: none;">v1.0.824</div>
+  <div style="position: fixed; top: 16px; right: 20px; font-size: 11px; font-weight: 600; color: #888; padding: 2px 6px; border-radius: 4px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); user-select: none;">v1.0.825</div>
 
   <h1>NWC & MusicXML Converter</h1>
   <p class="subtitle">NoteWorthy Composer 및 MusicXML 파일을 MusicXML 또는 MIDI로 변환합니다</p>
@@ -257,7 +257,7 @@
 
   <p class="viewer-link">파일 없이 둘러보려면 <a href="../viewer/index.html" target="_blank" rel="opener">NWC Viewer</a>를 바로 열어보세요.</p>
 
-  <footer>브라우저에서 직접 처리 — 파일이 서버로 전송되지 않습니다 · v1.0.824</footer>
+  <footer>브라우저에서 직접 처리 — 파일이 서버로 전송되지 않습니다 · v1.0.825</footer>
 
   <script type="module">
     import { convertNWCToMusicXML, parseNWC } from '../viewer/lib/nwc2xml/index.js';
@@ -290,15 +290,6 @@
       const PPQ = 480;
       const doc = new DOMParser().parseFromString(xmlStr, 'application/xml');
 
-      // Tempo: prefer <sound tempo="…">, fall back to <per-minute>
-      let tempoUs = 500000;
-      const soundEl = doc.querySelector('sound[tempo]');
-      if (soundEl) tempoUs = Math.round(60_000_000 / parseFloat(soundEl.getAttribute('tempo')));
-      else {
-        const pmEl = doc.querySelector('per-minute');
-        if (pmEl) tempoUs = Math.round(60_000_000 / parseFloat(pmEl.textContent));
-      }
-
       // Time signature
       let tsNum = 4, tsDen = 4;
       const beatsEl = doc.querySelector('time beats');
@@ -306,15 +297,8 @@
       if (beatsEl)    tsNum = parseInt(beatsEl.textContent);
       if (beatTypeEl) tsDen = parseInt(beatTypeEl.textContent);
 
-      const tracks = [];
-
-      // Track 0 – tempo map
-      const tu = [(tempoUs>>>16)&0xFF, (tempoUs>>>8)&0xFF, tempoUs&0xFF];
-      tracks.push([
-        0x00, 0xFF, 0x51, 0x03, ...tu,
-        0x00, 0xFF, 0x58, 0x04, tsNum, Math.round(Math.log2(tsDen)), 24, 8,
-        0x00, 0xFF, 0x2F, 0x00,
-      ]);
+      const tracks = [null]; // Track 0 is written after collecting tempo directions.
+      const tempoEvents = [];
 
       // One track per part
       for (const part of doc.querySelectorAll('part')) {
@@ -332,7 +316,7 @@
         const events = [{ tick: 0, data: [0xC0 | channel, program] }];
 
         let divisions = 1;
-        let position  = 0; // absolute, in MusicXML divisions
+        let position  = 0; // absolute, in MIDI ticks
         let prevNoteStart = 0;
 
         for (const measure of part.querySelectorAll('measure')) {
@@ -343,10 +327,19 @@
                 if (d) divisions = parseInt(d.textContent);
                 break;
               }
+              case 'direction':
+              case 'sound': {
+                const sound = el.tagName === 'sound' ? el : el.querySelector('sound[tempo]');
+                const bpm = parseFloat(sound?.getAttribute('tempo') ?? el.querySelector('per-minute')?.textContent);
+                if (Number.isFinite(bpm) && bpm > 0) {
+                  tempoEvents.push({ tick: Math.round(position), value: Math.round(60_000_000 / bpm) });
+                }
+                break;
+              }
               case 'note': {
                 const isChord = !!el.querySelector('chord');
                 const isRest  = !!el.querySelector('rest');
-                const dur = parseInt(el.querySelector('duration')?.textContent || '0');
+                const dur = parseInt(el.querySelector('duration')?.textContent || '0') * PPQ / divisions;
 
                 const noteStart = isChord ? prevNoteStart : position;
                 if (!isChord) { prevNoteStart = position; position += dur; }
@@ -360,27 +353,29 @@
                     const midiNote = stepToMidi(step, octave, alter);
 
                     if (midiNote >= 0 && midiNote <= 127) {
-                      const onTick  = Math.round(noteStart * PPQ / divisions);
-                      const offTick = Math.round((noteStart + dur) * PPQ / divisions);
-                      events.push({ tick: onTick,  data: [0x90 | channel, midiNote, 80] });
-                      events.push({ tick: offTick, data: [0x80 | channel, midiNote, 0]  });
+                      const onTick  = Math.round(noteStart);
+                      const offTick = Math.round(noteStart + dur);
+                      const ties = [...el.querySelectorAll('tie')].map(tie => tie.getAttribute('type'));
+                      if (!ties.includes('stop')) events.push({ tick: onTick, data: [0x90 | channel, midiNote, 80] });
+                      if (!ties.includes('start')) events.push({ tick: offTick, data: [0x80 | channel, midiNote, 0] });
                     }
                   }
                 }
                 break;
               }
               case 'backup':
-                position -= parseInt(el.querySelector('duration')?.textContent || '0');
+                position -= parseInt(el.querySelector('duration')?.textContent || '0') * PPQ / divisions;
                 break;
               case 'forward':
-                position += parseInt(el.querySelector('duration')?.textContent || '0');
+                position += parseInt(el.querySelector('duration')?.textContent || '0') * PPQ / divisions;
                 break;
             }
           }
         }
 
         // Note-offs before note-ons at the same tick
-        events.sort((a, b) => a.tick - b.tick || (a.data[0] & 0xF0) - (b.data[0] & 0xF0));
+        events.sort((a, b) => a.tick - b.tick ||
+          ({ 0xC0: 0, 0x80: 1, 0x90: 2 }[a.data[0] & 0xF0] - { 0xC0: 0, 0x80: 1, 0x90: 2 }[b.data[0] & 0xF0]));
 
         const trackData = [];
         let lastTick = 0;
@@ -391,6 +386,22 @@
         trackData.push(0x00, 0xFF, 0x2F, 0x00);
         tracks.push(trackData);
       }
+
+      // Resolve duplicate tempo directions from multiple parts at the same tick.
+      tempoEvents.sort((a, b) => a.tick - b.tick);
+      if (!tempoEvents.length || tempoEvents[0].tick > 0) tempoEvents.unshift({ tick: 0, value: 500000 });
+      const tempoTrack = [0x00, 0xFF, 0x58, 0x04, tsNum, Math.round(Math.log2(tsDen)), 24, 8];
+      let lastTempoTick = 0;
+      for (let i = 0; i < tempoEvents.length; i++) {
+        const event = tempoEvents[i];
+        if (tempoEvents[i + 1]?.tick === event.tick) continue;
+        const us = event.value;
+        tempoTrack.push(...encodeVLQ(event.tick - lastTempoTick), 0xFF, 0x51, 0x03,
+          (us >>> 16) & 0xFF, (us >>> 8) & 0xFF, us & 0xFF);
+        lastTempoTick = event.tick;
+      }
+      tempoTrack.push(0x00, 0xFF, 0x2F, 0x00);
+      tracks[0] = tempoTrack;
 
       const header = [
         0x4D,0x54,0x68,0x64, 0x00,0x00,0x00,0x06,

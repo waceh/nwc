@@ -537,9 +537,10 @@
 						<!-- 메뉴 보기 버튼 (맨 우측에 배치) -->
 						<button id="sample_scores_open" type="button" hidden title="샘플 악보 열기">샘플악보</button>
 						<button id="menu_full_toggle" class="menu-simple-only" title="전체 메뉴 보기">메뉴 보기</button>
+						<button id="fullscreen_toggle" title="전체보기 (악보만 표시)">전체보기</button>
 					</div>
 					<div class="toolbar-group" style="margin-left: auto; border-left: none;">
-						<button id="app_version" type="button" title="Version" style="font-size: 11px; font-weight: 600; color: var(--text-dim, #888); padding: 2px 6px; border-radius: 4px; background: rgba(125,125,125,0.12); border: 1px solid var(--border, rgba(125,125,125,0.2)); user-select: none; letter-spacing: 0.02em;">v1.0.824</button>
+						<button id="app_version" type="button" title="Version" style="font-size: 11px; font-weight: 600; color: var(--text-dim, #888); padding: 2px 6px; border-radius: 4px; background: rgba(125,125,125,0.12); border: 1px solid var(--border, rgba(125,125,125,0.2)); user-select: none; letter-spacing: 0.02em;">v1.0.825</button>
 					</div>
 				</div>
 
@@ -559,8 +560,8 @@
 						</div>
 						<select id="page_view_mode" style="display: none;" title="페이지 보기 방식">
 							<option value="vertical">세로로 보기</option>
-							<option value="single-page">한 페이지씩</option>
-							<option value="two-up" selected>두 페이지씩</option>
+							<option value="single-page" selected>한 페이지씩</option>
+							<option value="two-up">두 페이지씩</option>
 							<option value="horizontal">가로로 보기</option>
 						</select>
 						<span id="page_nav" style="display: none;">
@@ -587,7 +588,6 @@
 
 					<!-- Full View & Menu Simplify Toggles -->
 					<div class="toolbar-group">
-						<button id="fullscreen_toggle" title="전체보기 (악보만 표시)">전체보기</button>
 						<button id="menu_simple_toggle" title="메뉴 간략히 (주요 컨트롤만 표시)">메뉴 간략히</button>
 					</div>
 				</div>
@@ -608,7 +608,7 @@
 			<button id="fullscreen_exit" title="전체보기 종료 (Esc)">축소</button>
 
 			<div id="footer">
-				브라우저에서 직접 처리 — 파일이 서버로 전송되지 않습니다 · v1.0.824
+					브라우저에서 직접 처리 — 파일이 서버로 전송되지 않습니다 · v1.0.825
 			</div>
 		</div>
 

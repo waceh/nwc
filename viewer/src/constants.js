@@ -178,11 +178,11 @@ function getZoomLevel() {
 }
 
 // Page view mode — controls how pages are arranged in page layout mode.
-// 'vertical': pages stacked vertically, free scrolling (default)
+// 'vertical': pages stacked vertically, free scrolling
 // 'single-page': one page at a time, prev/next navigation
 // 'two-up': side-by-side pairs (2 pages per row, like a book spread)
 // 'horizontal': left-to-right horizontal scroll (single row)
-let pageViewMode = 'two-up'
+let pageViewMode = 'single-page'
 const PAGE_VIEW_MODES = ['vertical', 'single-page', 'two-up', 'horizontal']
 
 function setPageViewMode(mode) {
