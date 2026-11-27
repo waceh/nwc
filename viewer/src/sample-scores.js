@@ -3,7 +3,7 @@ const SAMPLE_NAMES = [
 	'the blenders-you.nwc',
 ]
 
-/** Reveal the sample picker after five version clicks within three seconds. */
+/** Reveal the sample picker after five version clicks. */
 export function initSampleScores(openScore) {
 	const version = document.getElementById('app_version')
 	const trigger = document.getElementById('sample_scores_open')
@@ -12,17 +12,11 @@ export function initSampleScores(openScore) {
 	const status = document.getElementById('sample_scores_status')
 	const close = document.getElementById('sample_scores_close')
 	let clickCount = 0
-	let firstClickTime = 0
 	let request = null
 	const buttons = []
 
 	version.addEventListener('click', () => {
 		if (!trigger.hidden) return
-		const now = performance.now()
-		if (clickCount === 0 || now - firstClickTime > 3000) {
-			firstClickTime = now
-			clickCount = 0
-		}
 		if (++clickCount === 5) {
 			trigger.hidden = false
 			trigger.focus()

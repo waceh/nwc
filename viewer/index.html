@@ -81,13 +81,14 @@
 			/* Keep the four primary controls together in both menu modes. */
 			.primary-toolbar { padding: 2px 8px; gap: 4px; }
 			.primary-controls { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+			.version-actions { display: inline-flex; align-items: center; gap: 3px; margin-left: auto; }
 			.primary-controls button, #fullscreen_play_toggle, #fullscreen_exit { align-items: center; justify-content: center; }
-			.primary-controls button { display: inline-flex; width: 36px; min-width: 36px; min-height: 36px; padding: 0; }
+			.primary-controls button, #sample_scores_open { display: inline-flex; align-items: center; justify-content: center; width: 36px; min-width: 36px; min-height: 36px; padding: 0; }
 			#fullscreen_play_toggle, #fullscreen_exit { min-width: 44px; min-height: 44px; }
 			button svg { width: 20px; height: 20px; flex: none; }
-			.primary-controls button svg, #fullscreen_play_toggle svg, #fullscreen_exit svg { width: 16px; height: 16px; }
+			.primary-controls button svg, #sample_scores_open svg, #fullscreen_play_toggle svg, #fullscreen_exit svg { width: 16px; height: 16px; }
 			@media (pointer: coarse) {
-				.primary-controls button { width: 40px; min-width: 40px; min-height: 40px; }
+				.primary-controls button, #sample_scores_open { width: 40px; min-width: 40px; min-height: 40px; }
 			}
 			#export_pdf svg { vertical-align: middle; margin-right: 3px; }
 			.transport-button .icon-pause { display: none; }
@@ -341,7 +342,7 @@
 				font-size: 10px;
 				color: var(--text-dim);
 			}
-			.primary-toolbar #app_version { margin-left: auto; padding: 4px 6px; font-size: 10px; color: var(--text-dim); background: transparent; }
+			.primary-toolbar #app_version { padding: 4px 6px; font-size: 10px; color: var(--text-dim); background: transparent; }
 
 			a {
 				color: var(--text-dim);
@@ -509,7 +510,10 @@
 						<button id="menu_toggle" type="button" title="연습 설정 보기" aria-label="연습 설정 보기" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2" fill="var(--surface)"/><circle cx="16" cy="12" r="2" fill="var(--surface)"/><circle cx="11" cy="18" r="2" fill="var(--surface)"/></svg></button>
 						<button id="fullscreen_toggle" type="button" title="전체보기" aria-label="전체보기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4H4v4M16 4h4v4M4 16v4h4M20 16v4h-4"/></svg></button>
 					</div>
-					<button id="app_version" type="button" title="Version">v1.0.830</button>
+					<div class="version-actions">
+						<button id="sample_scores_open" type="button" hidden title="샘플곡 열기" aria-label="샘플곡 열기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3" fill="currentColor" stroke="none"/><circle cx="18" cy="16" r="3" fill="currentColor" stroke="none"/></svg></button>
+						<button id="app_version" type="button" title="Version">v1.0.830</button>
+					</div>
 				</div>
 				<div class="toolbar menu-extra">
 					<div class="toolbar-group">
@@ -537,7 +541,6 @@
 						<button id="parts_all_btn" type="button" class="parts-all-btn" title="전체 파트 선택/해제">전체</button>
 						<div id="part_checkbox_container" class="part-checkbox-container"></div>
 					</div>
-					<button id="sample_scores_open" type="button" hidden title="샘플 악보 열기">샘플악보</button>
 				</div>
 
 				<div class="toolbar menu-extra">

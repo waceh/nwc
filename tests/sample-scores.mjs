@@ -50,16 +50,19 @@ function picker(fetchScore) {
 		clickVersion(time) { now = time; elements.app_version.events.click() } }
 }
 
-test('sample button is initially hidden and requires five version clicks within three seconds', () => {
+test('sample button is initially hidden and appears after five version clicks', () => {
 	assert.match(html, /id="sample_scores_open"[^>]*\bhidden\b/)
+	const primary = html.slice(html.indexOf('<div class="toolbar primary-toolbar">'), html.indexOf('<div class="toolbar menu-extra">'))
+	assert.ok(primary.indexOf('id="sample_scores_open"') >= 0 && primary.indexOf('id="sample_scores_open"') < primary.indexOf('id="app_version"'), 'sample shortcut should appear immediately left of version')
+	assert.match(primary, /id="sample_scores_open"[^>]*aria-label="샘플곡 열기"[^>]*>\s*<svg/, 'sample shortcut should be an accessible note icon')
 	const p = picker()
 	for (const t of [0, 500, 1000, 1500]) p.clickVersion(t)
 	assert.equal(p.elements.sample_scores_open.hidden, true)
-	p.clickVersion(3001)
-	assert.equal(p.elements.sample_scores_open.hidden, true)
-	for (const t of [3500, 4000, 4500, 5000]) p.clickVersion(t)
+	p.clickVersion(10000)
 	assert.equal(p.elements.sample_scores_open.hidden, false)
 	assert.equal(p.elements.sample_scores_open.focused, true)
+	p.elements.sample_scores_open.events.click()
+	assert.equal(p.elements.sample_scores_dialog.open, true)
 })
 
 test('both sample choices load the exact packaged NWC and close the picker', async () => {
