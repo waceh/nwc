@@ -357,7 +357,7 @@ function setPlaybackButtonState(playing) {
 	const label = playing ? '일시정지' : '재생'
 	for (const button of [playBtn, fullscreenPlayBtn]) {
 		if (!button) continue
-		button.textContent = playing ? '■' : '▶'
+		button.classList.toggle('is-playing', playing)
 		button.title = label
 		button.ariaLabel = label
 	}
@@ -1094,7 +1094,7 @@ if (pageViewModeSelect) {
 
 function updatePageNavVisibility() {
 	const nav = document.getElementById('page_nav')
-	if (nav) nav.style.display = getLayoutMode() === 'page' ? 'inline' : 'none'
+	if (nav) nav.style.display = getLayoutMode() === 'page' ? 'flex' : 'none'
 }
 
 function updatePageNav() {
@@ -1189,10 +1189,11 @@ async function exportPdf() {
 	}
 
 	const btn = document.getElementById('export_pdf')
-	const originalLabel = btn?.textContent
+	const label = btn?.querySelector('.button-label')
+	const originalLabel = label?.textContent
 	if (btn) {
 		btn.disabled = true
-		btn.textContent = '내보내는 중…'
+		if (label) label.textContent = '내보내는 중…'
 	}
 
 	try {
@@ -1233,7 +1234,7 @@ async function exportPdf() {
 		window.__pdfExportViewport = null
 		if (btn) {
 			btn.disabled = false
-			btn.textContent = originalLabel
+			if (label) label.textContent = originalLabel
 		}
 	}
 }
@@ -1466,8 +1467,9 @@ const menuToggleBtn = document.getElementById('menu_toggle')
 function updateMenuToggle() {
 	if (!menuToggleBtn) return
 	const simple = document.body.classList.contains('menu-simple')
-	menuToggleBtn.textContent = simple ? '메뉴 보기' : '메뉴 간략히'
-	menuToggleBtn.title = simple ? '전체 메뉴 보기' : '메뉴 간략히 보기'
+	menuToggleBtn.ariaExpanded = String(!simple)
+	menuToggleBtn.ariaLabel = simple ? '연습 설정 보기' : '연습 설정 닫기'
+	menuToggleBtn.title = menuToggleBtn.ariaLabel
 }
 
 function setMenuSimple(on) {

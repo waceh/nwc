@@ -47,10 +47,7 @@
 				height: 100%;
 			}
 
-			/* Full view — hides everything but the score itself. #score has
-			   flex: 1 (see below) so it expands to fill the space #top/#footer
-			   free up; #fullscreen_exit floats over it since there's no
-			   toolbar left to put a button in. */
+			/* Full view leaves only the transport and exit controls over the score. */
 			#fullscreen_exit {
 				display: none;
 				position: fixed;
@@ -75,18 +72,24 @@
 			}
 
 			body.fullscreen-mode #fullscreen_exit {
-				display: inline-block;
+				display: inline-flex;
 			}
 
 			@media (max-width: 900px), (pointer: coarse) {
 				body.fullscreen-mode #fullscreen_play_toggle {
-					display: inline-block;
+					display: inline-flex;
 				}
 			}
 
 			/* Keep the four primary controls together in both menu modes. */
 			.primary-controls { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
-			.primary-controls #open, .primary-controls #play { min-width: 44px; min-height: 44px; font-size: 19px; }
+			.primary-controls button, #fullscreen_play_toggle, #fullscreen_exit { min-width: 44px; min-height: 44px; align-items: center; justify-content: center; }
+			.primary-controls button { display: inline-flex; width: 44px; padding: 0; }
+			button svg { width: 20px; height: 20px; flex: none; }
+			#export_pdf svg { vertical-align: middle; margin-right: 3px; }
+			.transport-button .icon-pause { display: none; }
+			.transport-button.is-playing .icon-play { display: none; }
+			.transport-button.is-playing .icon-pause { display: block; }
 
 			body.menu-simple .menu-extra,
 			body.menu-simple #footer {
@@ -172,6 +175,9 @@
 				font-size: 11px;
 				color: var(--text-dim);
 			}
+			.speed-control svg { width: 18px; height: 18px; flex: none; }
+			.octave-control-group { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border: 1px solid var(--border); border-radius: var(--radius); background: rgba(125, 125, 125, 0.12); }
+			#octave_display { min-width: 20px; text-align: center; color: var(--accent); font-weight: 700; }
 
 			.speed-control input[type="number"] {
 				background: var(--surface);
@@ -332,6 +338,7 @@
 				font-size: 10px;
 				color: var(--text-dim);
 			}
+			#footer #app_version { padding: 1px 5px; font-size: 10px; color: var(--text-dim); background: transparent; }
 
 			a {
 				color: var(--text-dim);
@@ -346,22 +353,7 @@
 				display: inline-block;
 			}
 
-			#menu_toggle {
-				background: #4f46e5 !important;
-				color: #ffffff !important;
-				font-weight: 600 !important;
-				border: 1px solid #6366f1 !important;
-				border-radius: 4px !important;
-				padding: 3px 10px !important;
-				box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-				width: 100px;
-				box-sizing: border-box;
-			}
-
-			#menu_toggle:hover {
-				background: #4338ca !important;
-				border-color: #4f46e5 !important;
-			}
+			#menu_toggle[aria-expanded="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 
 			#sample_scores_dialog {
 				background: var(--surface);
@@ -372,8 +364,9 @@
 				width: min(420px, calc(100vw - 64px));
 			}
 
-			#page_nav { align-items: center; gap: 3px; white-space: nowrap; }
-			#page_nav button { min-width: 28px; min-height: 28px; }
+			#page_nav { align-items: center; justify-content: center; gap: 5px; white-space: nowrap; padding: 0 10px 5px; }
+			#page_nav button { min-width: 36px; min-height: 32px; display: inline-flex; align-items: center; justify-content: center; }
+			#page_nav input { width: 32px; text-align: center; }
 			.practice-options { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
 			.practice-options fieldset { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; }
 			.practice-options legend { color: var(--text-dim); font-size: 11px; }
@@ -508,59 +501,49 @@
 
 		<div id="container">
 			<div id="top">
-				<div class="toolbar">
-					<!-- Primary actions keep the same position in both menu modes. -->
+				<div class="toolbar primary-toolbar">
+					<div class="toolbar-group primary-controls">
+						<button id="open" type="button" title="악보 파일 열기" aria-label="악보 파일 열기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2h8l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z"/><path d="M14 2v6h5"/></svg></button>
+						<input type="file" id="opener" hidden />
+						<button id="play" type="button" class="transport-button" title="재생" aria-label="재생"><svg class="icon-play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg><svg class="icon-pause" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg></button>
+						<button id="menu_toggle" type="button" title="연습 설정 보기" aria-label="연습 설정 보기" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2" fill="var(--surface)"/><circle cx="16" cy="12" r="2" fill="var(--surface)"/><circle cx="11" cy="18" r="2" fill="var(--surface)"/></svg></button>
+						<button id="fullscreen_toggle" type="button" title="전체보기" aria-label="전체보기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4H4v4M16 4h4v4M4 16v4h4M20 16v4h-4"/></svg></button>
+					</div>
+				</div>
+				<div id="page_nav" style="display: none;">
+					<button id="page_prev" type="button" title="이전 페이지" aria-label="이전 페이지"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
+					<input id="page_input" type="number" min="1" value="1" title="페이지 이동" aria-label="페이지 번호">
+					<span id="page_indicator" style="font-size: 11px; color: var(--text-dim);"> / 1</span>
+					<button id="page_next" type="button" title="다음 페이지" aria-label="다음 페이지"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
+				</div>
+
+				<div class="toolbar menu-extra">
 					<div class="toolbar-group">
-						<span class="primary-controls">
-							<button id="open" type="button" title="악보 파일 열기" aria-label="악보 파일 열기"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 2h8l5 5v15H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z"/><path d="M14 2v6h5"/></svg></button>
-							<input type="file" id="opener" hidden />
-							<button id="play" type="button" title="재생" aria-label="재생">▶</button>
-							<button id="menu_toggle" type="button" title="전체 메뉴 보기">메뉴 보기</button>
-							<button id="fullscreen_toggle" type="button" title="전체보기 (악보만 표시)">전체보기</button>
-						</span>
-						<span id="page_nav" style="display: none;">
-							<button id="page_prev" title="이전 페이지">&lt;</button>
-							<input id="page_input" type="number" min="1" value="1" title="페이지 이동" style="width: 32px; text-align: center;">
-							<span id="page_indicator" style="font-size: 11px; color: var(--text-dim);"> / 1</span>
-							<button id="page_next" title="다음 페이지">&gt;</button>
-						</span>
-						<span id="playback_time" class="time-display menu-extra">0:00 / 0:00</span>
-						<input type="range" id="progress_bar"
-							class="menu-extra"
-							min="0" max="1" step="0.001" value="0"
-							style="width: 120px;" />
-						<label class="speed-control menu-extra" title="재생 속도">
-							<input type="range" id="speed_slider"
-								min="0.1" max="3" step="0.05" value="1"
-								style="width: 70px;" />
-							<input type="number" id="speed_input"
-								min="0.1" max="4" step="0.05" value="1"
-								style="width: 48px;" />x
+						<span id="playback_time" class="time-display">0:00 / 0:00</span>
+						<input type="range" id="progress_bar" min="0" max="1" step="0.001" value="0" style="width: 120px;" aria-label="재생 위치" />
+						<label class="speed-control" title="재생 속도"><span>속도</span>
+							<input type="range" id="speed_slider" min="0.1" max="3" step="0.05" value="1" style="width: 70px;" />
+							<input type="number" id="speed_input" min="0.1" max="4" step="0.05" value="1" style="width: 48px;" /><span>×</span>
 						</label>
 						<label class="speed-control" title="음량">
-							🔊<input type="range" id="volume_slider"
-								min="0" max="1.5" step="0.01" value="0.08"
-								style="width: 70px;" />
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4Z"/><path d="M17 9a4 4 0 0 1 0 6"/></svg>
+							<input type="range" id="volume_slider" min="0" max="1.5" step="0.01" value="0.08" style="width: 70px;" aria-label="음량" />
 							<span id="volume_label" style="min-width: 32px; text-align: center; color: var(--text-dim);">8%</span>
 						</label>
-						<div id="part_selector_group" class="part-selector-group menu-extra" title="재생할 파트(줄 번호) 선택">
-							<span class="part-title-label">파트</span>
-							<button id="parts_all_btn" type="button" class="parts-all-btn" title="전체 파트 선택/해제">전체</button>
-							<div id="part_checkbox_container" class="part-checkbox-container"></div>
+						<div class="octave-control-group" title="재생 옥타브 조절 (음 높이 변경)">
+							<span>8va</span>
+							<button id="octave_down" type="button" title="한 옥타브 낮춤" aria-label="한 옥타브 낮춤">−</button>
+							<span id="octave_display">0</span>
+							<button id="octave_up" type="button" title="한 옥타브 높임" aria-label="한 옥타브 높임">+</button>
 						</div>
-						<!-- Octave Control Buttons -->
-						<div class="octave-control-group" title="재생 옥타브 조절 (음 높이 변경)" style="display: inline-flex; align-items: center; background: rgba(125,125,125,0.15); border: 1px solid var(--border-color, #ccc); border-radius: 4px; padding: 1px 4px; gap: 4px;">
-							<span style="font-size: 11px; font-weight: 600; color: var(--text-dim);">옥타브</span>
-							<button id="octave_down" style="padding: 1px 6px; font-size: 11px; font-weight: bold; border-radius: 3px; cursor: pointer;" title="-1 옥타브 낮춤">▼</button>
-							<span id="octave_display" style="font-size: 11px; font-weight: 700; min-width: 20px; text-align: center; color: var(--accent-color, #2563eb);">0</span>
-							<button id="octave_up" style="padding: 1px 6px; font-size: 11px; font-weight: bold; border-radius: 3px; cursor: pointer;" title="+1 옥타브 높임">▲</button>
-						</div>
-						<button id="autoscroll_toggle" class="active menu-extra" title="재생 중 자동 스크롤">자동 스크롤</button>
-						<button id="sample_scores_open" type="button" hidden title="샘플 악보 열기">샘플악보</button>
+						<button id="autoscroll_toggle" class="active" title="재생 중 자동 스크롤">자동 스크롤</button>
 					</div>
-					<div class="toolbar-group" style="margin-left: auto; border-left: none;">
-						<button id="app_version" type="button" title="Version" style="font-size: 11px; font-weight: 600; color: var(--text-dim, #888); padding: 2px 6px; border-radius: 4px; background: rgba(125,125,125,0.12); border: 1px solid var(--border, rgba(125,125,125,0.2)); user-select: none; letter-spacing: 0.02em;">v1.0.829</button>
+					<div id="part_selector_group" class="part-selector-group" title="재생할 파트(줄 번호) 선택">
+						<span class="part-title-label">파트</span>
+						<button id="parts_all_btn" type="button" class="parts-all-btn" title="전체 파트 선택/해제">전체</button>
+						<div id="part_checkbox_container" class="part-checkbox-container"></div>
 					</div>
+					<button id="sample_scores_open" type="button" hidden title="샘플 악보 열기">샘플악보</button>
 				</div>
 
 				<div class="toolbar menu-extra">
@@ -585,7 +568,7 @@
 							<option value="horizontal">가로로 보기</option>
 						</select>
 						<a href="../converter/index.html" style="text-decoration: none;"><button id="convert_btn" title="NWC를 MusicXML/MIDI로 변환">Convert</button></a>
-						<button id="export_pdf" style="display: none;" title="현재 악보를 PDF 파일로 저장">PDF로 저장</button>
+						<button id="export_pdf" style="display: none;" title="현재 악보를 PDF 파일로 저장"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 17v4h16v-4"/></svg> <span class="button-label">PDF로 저장</span></button>
 					</div>
 
 					<!-- View -->
@@ -602,7 +585,7 @@
 
 				</div>
 				<div class="toolbar menu-extra practice-options" aria-label="연습 설정">
-					<fieldset><legend>구간 반복</legend>
+					<fieldset><legend>A–B 반복</legend>
 						<label><input id="loop_enabled" type="checkbox">사용</label>
 						<label>시작 <input id="loop_start" type="number" min="1" value="1"></label>
 						<label>끝 <input id="loop_end" type="number" min="1" value="1"></label>
@@ -637,11 +620,11 @@
 				<div id="invisible_canvas"></div>
 			</div>
 
-			<button id="fullscreen_play_toggle" type="button" title="재생" aria-label="재생">▶</button>
-			<button id="fullscreen_exit" title="전체보기 종료 (Esc)">축소</button>
+			<button id="fullscreen_play_toggle" type="button" class="transport-button" title="재생" aria-label="재생"><svg class="icon-play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg><svg class="icon-pause" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg></button>
+			<button id="fullscreen_exit" type="button" title="전체보기 종료 (Esc)" aria-label="전체보기 종료"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h4V4M20 8h-4V4M4 16h4v4M20 16h-4v4"/></svg></button>
 
 			<div id="footer">
-					브라우저에서 직접 처리 — 파일이 서버로 전송되지 않습니다 · v1.0.829
+					브라우저에서 직접 처리 — 파일이 서버로 전송되지 않습니다 · <button id="app_version" type="button" title="Version">v1.0.830</button>
 			</div>
 		</div>
 
