@@ -349,6 +349,7 @@ function formatTime(sec) {
 }
 
 const playBtn = document.getElementById('play')
+const fullscreenPlayBtn = document.getElementById('fullscreen_play_toggle')
 const stopBtn = document.getElementById('stop')
 const progressBar = document.getElementById('progress_bar')
 const timeLabel = document.getElementById('playback_time')
@@ -379,13 +380,16 @@ playback.onNoteOff((ev) => {
 })
 
 playback.onStateChange((playing) => {
-	playBtn.textContent = playing ? '일시정지' : '재생'
+	const label = playing ? '일시정지' : '재생'
+	playBtn.textContent = label
+	if (fullscreenPlayBtn) fullscreenPlayBtn.textContent = label
 	if (playing) highlighter.start()
 	else highlighter.pause()  // keep highlights frozen on pause
 })
 
 playback.onEnd(() => {
 	playBtn.textContent = '재생'
+	if (fullscreenPlayBtn) fullscreenPlayBtn.textContent = '재생'
 	progressBar.value = 0
 	timeLabel.textContent = formatTime(0) + ' / ' + formatTime(playback.duration)
 	highlighter.stop()
@@ -1454,6 +1458,7 @@ function setFullscreenMode(on) {
 
 if (fullscreenToggleBtn) fullscreenToggleBtn.onclick = () => setFullscreenMode(true)
 if (fullscreenExitBtn) fullscreenExitBtn.onclick = () => setFullscreenMode(false)
+if (fullscreenPlayBtn) fullscreenPlayBtn.onclick = handlePlayToggleGesture
 
 // ---- Menu simplify (collapses the toolbar to a single row: Open / 재생 / 정지 / 옥타브 / 음량) ----
 

@@ -58,6 +58,15 @@
 				right: 8px;
 				z-index: 200;
 			}
+			#fullscreen_play_toggle {
+				display: none;
+				position: fixed;
+				top: 8px;
+				left: 8px;
+				z-index: 200;
+				min-height: 44px;
+				min-width: 80px;
+			}
 
 			body.fullscreen-mode #top,
 			body.fullscreen-mode #footer {
@@ -66,6 +75,12 @@
 
 			body.fullscreen-mode #fullscreen_exit {
 				display: inline-block;
+			}
+
+			@media (max-width: 900px), (pointer: coarse) {
+				body.fullscreen-mode #fullscreen_play_toggle {
+					display: inline-block;
+				}
 			}
 
 			/* Menu simplify — independent toggle from full view (전체보기)
@@ -557,7 +572,7 @@
 						</span>
 					</div>
 					<div class="toolbar-group" style="margin-left: auto; border-left: none;">
-						<button id="app_version" type="button" title="Version" style="font-size: 11px; font-weight: 600; color: var(--text-dim, #888); padding: 2px 6px; border-radius: 4px; background: rgba(125,125,125,0.12); border: 1px solid var(--border, rgba(125,125,125,0.2)); user-select: none; letter-spacing: 0.02em;">v1.0.827</button>
+						<button id="app_version" type="button" title="Version" style="font-size: 11px; font-weight: 600; color: var(--text-dim, #888); padding: 2px 6px; border-radius: 4px; background: rgba(125,125,125,0.12); border: 1px solid var(--border, rgba(125,125,125,0.2)); user-select: none; letter-spacing: 0.02em;">v1.0.828</button>
 					</div>
 				</div>
 
@@ -638,10 +653,11 @@
 				<div id="invisible_canvas"></div>
 			</div>
 
+			<button id="fullscreen_play_toggle" type="button" title="재생 / 일시정지">재생</button>
 			<button id="fullscreen_exit" title="전체보기 종료 (Esc)">축소</button>
 
 			<div id="footer">
-					브라우저에서 직접 처리 — 파일이 서버로 전송되지 않습니다 · v1.0.827
+					브라우저에서 직접 처리 — 파일이 서버로 전송되지 않습니다 · v1.0.828
 			</div>
 		</div>
 

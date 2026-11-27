@@ -27,11 +27,14 @@ test('full view works with both compact and expanded menus', () => {
     toggle(name, on) { if (on) classes.add(name); else classes.delete(name) },
     contains(name) { return classes.has(name) },
   }
-  const buttons = Object.fromEntries(['fullscreen_toggle', 'fullscreen_exit', 'menu_simple_toggle', 'menu_full_toggle'].map(id => [id, {}]))
+  const buttons = Object.fromEntries(['fullscreen_toggle', 'fullscreen_exit', 'fullscreen_play_toggle', 'menu_simple_toggle', 'menu_full_toggle'].map(id => [id, {}]))
+  let playToggles = 0
   const context = {
     document: { body: { classList }, getElementById: id => buttons[id] ?? {}, addEventListener() {} },
     requestAnimationFrame: callback => callback(),
     resizeToFit() {}, getLayoutMode: () => 'page', getZoomFitMode: () => 'width', applyZoomFit() {},
+    fullscreenPlayBtn: buttons.fullscreen_play_toggle,
+    handlePlayToggleGesture: () => { playToggles++ },
   }
   vm.createContext(context)
   const start = main.indexOf('const fullscreenToggleBtn =')
@@ -43,9 +46,11 @@ test('full view works with both compact and expanded menus', () => {
     buttons.fullscreen_toggle.onclick()
     assert.equal(classes.has('fullscreen-mode'), true)
     assert.equal(classes.has('menu-simple'), compact)
+    buttons.fullscreen_play_toggle.onclick()
     buttons.fullscreen_exit.onclick()
     assert.equal(classes.has('fullscreen-mode'), false)
   }
+  assert.equal(playToggles, 2)
 })
 
 test('mobile rehearsal options are configurable before entering full view', () => {
@@ -60,4 +65,38 @@ test('mobile rehearsal options are configurable before entering full view', () =
   const expandedToolbar = html.indexOf('<div class="toolbar menu-extra">')
   assert.ok(nav > 0 && nav < expandedToolbar, 'page navigation must stay visible in the compact menu')
   assert.ok(html.includes('id="auto_page_turn" type="checkbox" checked'), 'automatic page turning should start on')
+})
+
+test('mobile full view has a top-left play/pause control wired to the existing gesture handler', () => {
+  assert.match(html, /<button id="fullscreen_play_toggle"[^>]*>재생<\/button>/)
+  assert.match(html, /body\.fullscreen-mode #fullscreen_play_toggle\s*\{[^}]*display:\s*inline-block/s)
+  assert.match(html, /#fullscreen_play_toggle\s*\{[^}]*left:\s*8px/s)
+  assert.match(main, /fullscreenPlayBtn\.onclick\s*=\s*handlePlayToggleGesture/)
+})
+
+test('full-view button label follows playback and end state', () => {
+  const buttons = { play: { textContent: '재생' }, fullscreen_play_toggle: { textContent: '재생' } }
+  const callbacks = {}
+  const context = {
+    document: { getElementById: id => buttons[id] || { value: 0, textContent: '' } },
+    playback: {
+      onTime(fn) { callbacks.time = fn }, onNoteOn() {}, onNoteOff() {},
+      onStateChange(fn) { callbacks.state = fn }, onEnd(fn) { callbacks.end = fn },
+      get duration() { return 0 },
+    },
+    highlighter: { start() {}, pause() {}, stop() {} },
+    pianoKeyboard: { noteOn() {}, noteOff() {}, clear() {} },
+    formatTime: () => '0:00',
+  }
+  vm.createContext(context)
+  const start = main.indexOf('const playBtn =')
+  const end = main.indexOf('// Tracks which score data', start)
+  vm.runInContext(main.slice(start, end) + '\nthis.labels = [playBtn, fullscreenPlayBtn]', context)
+  callbacks.state(true)
+  assert.deepEqual(Array.from(context.labels, button => button.textContent), ['일시정지', '일시정지'])
+  callbacks.state(false)
+  assert.deepEqual(Array.from(context.labels, button => button.textContent), ['재생', '재생'])
+  callbacks.state(true)
+  callbacks.end()
+  assert.deepEqual(Array.from(context.labels, button => button.textContent), ['재생', '재생'])
 })
