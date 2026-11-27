@@ -16,6 +16,87 @@ test('new visitors see one page at a time by default', () => {
   assert.doesNotMatch(html, /<option value="two-up" selected>/)
 })
 
+test('lyric reading mode keeps the score fitted to width and shows a single-line overlay', () => {
+  assert.ok(!html.includes('id="zoom_slider"'))
+  assert.ok(!html.includes('id="zoom_label"'))
+  assert.ok(html.includes('id="fit_width_btn"'))
+  assert.ok(html.includes('id="fit_height_btn"'))
+  assert.ok(html.includes('id="fit_lyrics_btn"'))
+  assert.ok(html.includes('id="lyric_line"'))
+  assert.ok(html.includes('id="lyric_part_picker"'))
+  assert.ok(html.includes('id="lyric_part_select"'))
+  assert.match(html, /body\.fullscreen-mode\.lyrics-mode #lyric_line\s*\{[^}]*display:\s*flex/s)
+  assert.match(html, /body\.fullscreen-mode\.lyrics-mode #score\s*\{[^}]*margin-top:\s*54px/s)
+  assert.match(html, /#lyric_line_text \.sung/)
+  const context = { global: {} }
+  vm.createContext(context)
+  vm.runInContext(constants.replace(/export\s*\{[\s\S]*?\}\s*$/, '') + '\nsetZoomFitMode("lyrics"); this.mode = getZoomFitMode()', context)
+  assert.equal(context.mode, 'lyrics')
+  const zooms = []
+  const fit = {
+    document: { getElementById: () => ({ clientWidth: 320, clientHeight: 600 }) },
+    maxCanvasWidth: 800, maxCanvasHeight: 1100, getZoomFitMode: () => 'lyrics',
+    resizeToFit() {}, setZoomLevel(value) { zooms.push(value) },
+    window: { applyZoom(value) { zooms.push(value) } },
+  }
+  vm.createContext(fit)
+  vm.runInContext(main.slice(main.indexOf('function applyZoomFit()'), main.indexOf('function updateFitButtonsUI')), fit)
+  fit.applyZoomFit()
+  assert.equal(zooms[0], (320 - 20) / 800)
+  assert.equal(zooms.length, 1, 'fit zoom should preserve the previous zoom for scroll centering')
+})
+
+test('tapping the lyric line selects any part with lyrics and remembers it', () => {
+  const makePicker = () => ({ value: '', replaceChildren(...options) { this.options = options } })
+  const lyricPartSelect = makePicker()
+  const lyricPartPicker = makePicker()
+  const saved = []
+  const context = {
+    partCheckboxContainer: { querySelectorAll: () => [{ checked: true, dataset: { staffIndex: '0' } }] },
+    lyricNotes: [
+      { staffIndex: 0, token: { text: 'First' } },
+      { staffIndex: 1, token: { text: 'Second' } },
+    ],
+    viewerSettings: {}, lyricPartSelect, lyricPartPicker, lyricPartLabel: { hidden: true },
+    scoreManager: { getData: () => ({ score: { staves: [{ staff_name: 'Lead' }, { staff_name: 'Harmony' }] } }) },
+    document: { createElement: () => ({}) },
+    buildLyricLines: (_notes, parts) => parts,
+    updateLyricLine() {}, playback: { currentTime: 0 },
+    persistViewerSettings(changes) { Object.assign(context.viewerSettings, changes); saved.push(changes) },
+  }
+  vm.createContext(context)
+  vm.runInContext(main.slice(main.indexOf('function refreshLyricLines()'), main.indexOf('function setPlaybackButtonState')), context)
+  context.refreshLyricLines()
+  assert.equal(lyricPartPicker.options.length, 2)
+  assert.equal(lyricPartPicker.value, '0')
+  assert.equal(lyricPartPicker.options[1].textContent, '2: Harmony')
+  lyricPartPicker.value = '1'
+  lyricPartPicker.onchange()
+  assert.equal(saved.length, 1)
+  assert.equal(saved[0].lyricPart, 1)
+  assert.equal(lyricPartSelect.value, '1')
+  assert.equal(context.lyricLines[0], 1)
+})
+
+test('lyric zoom selection is saved for the next visit', () => {
+  const buttons = Object.fromEntries(['fit_width_btn', 'fit_height_btn', 'fit_lyrics_btn'].map(id => [id, {}]))
+  const calls = []
+  const context = {
+    document: { getElementById: id => buttons[id] },
+    setZoomFitMode: mode => calls.push(['mode', mode]),
+    localStorage: { setItem: (key, value) => calls.push(['saved', key, value]) },
+    ZOOM_FIT_STORAGE_KEY: 'nwc_zoom_fit',
+    updateFitButtonsUI: () => calls.push(['buttons']),
+    applyZoomFit: () => calls.push(['zoom']),
+  }
+  vm.createContext(context)
+  const start = main.indexOf("for (const [id, mode] of [['fit_width_btn'")
+  const end = main.indexOf('// Apply fit mode after each render', start)
+  vm.runInContext(main.slice(start, end), context)
+  buttons.fit_lyrics_btn.onclick()
+  assert.deepEqual(calls, [['mode', 'lyrics'], ['saved', 'nwc_zoom_fit', 'lyrics'], ['buttons'], ['zoom']])
+})
+
 test('the primary toolbar keeps file, playback, menu and full view in one order', () => {
   const primary = html.slice(html.indexOf('<div class="toolbar primary-toolbar">'), html.indexOf('<div class="toolbar menu-extra">'))
   const controls = ['id="open"', 'id="play"', 'id="menu_toggle"', 'id="fullscreen_toggle"']
@@ -48,6 +129,7 @@ test('full view works with both compact and expanded menus', () => {
     resizeToFit() {}, getLayoutMode: () => 'page', getZoomFitMode: () => 'width', applyZoomFit() {},
     fullscreenPlayBtn: buttons.fullscreen_play_toggle,
     handlePlayToggleGesture: () => { playToggles++ },
+    persistViewerSettings() {},
   }
   vm.createContext(context)
   const start = main.indexOf('const fullscreenToggleBtn =')
@@ -111,6 +193,7 @@ test('full-view button label follows playback and end state', () => {
     highlighter: { start() {}, pause() {}, stop() {} },
     pianoKeyboard: { noteOn() {}, noteOff() {}, clear() {} },
     formatTime: () => '0:00',
+    currentLyric: () => null,
   }
   vm.createContext(context)
   const start = main.indexOf('const playBtn =')
@@ -183,4 +266,32 @@ test('starting playback from the toolbar enters full view after unlocking audio'
   context.playback.playing = true
   playBtn.onclick()
   assert.deepEqual(calls, ['toggle'])
+})
+
+test('play from the end restarts at the beginning while a mid-score pause resumes', async () => {
+  const source = main.slice(main.indexOf('async function togglePlayPause()'), main.indexOf('function handlePlayToggleGesture()'))
+  const score = {}
+  const calls = []
+  const playback = {
+    playing: false, currentTime: 10, duration: 10,
+    seek(time) { this.currentTime = time; calls.push(['seek', time]) },
+    async play() { calls.push(['play', this.currentTime]) },
+  }
+  const context = {
+    playback, scoreManager: { getData: () => score }, _loadedPlaybackData: score,
+    _pendingSeekTime: null, playRequestId: 0, preparingPlayback: false, practiceLoop: null,
+    updatePracticeLoop() {}, async playLeadIn() {},
+    highlighter: { seek(time) { calls.push(['cursor', time]) } },
+    updateLyricLine() {},
+    progressBar: { value: 1 }, timeLabel: { textContent: '' }, formatTime: time => String(time),
+  }
+  vm.createContext(context)
+  vm.runInContext(source + '\nthis.toggle = togglePlayPause', context)
+  await context.toggle()
+  assert.deepEqual(calls, [['seek', 0], ['cursor', 0], ['play', 0]])
+
+  calls.length = 0
+  playback.currentTime = 5
+  await context.toggle()
+  assert.deepEqual(calls, [['play', 5]])
 })

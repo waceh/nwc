@@ -193,12 +193,12 @@ function getPageViewMode() {
 	return pageViewMode
 }
 
-// Zoom fit mode — 'none', 'width', or 'height'.
+// Zoom fit mode — 'none', 'width', 'height', or width-fit with a lyric line.
 // Default to 'width' (W button active). Disengaged when the user manually drags the zoom slider.
 let zoomFitMode = 'width'
 
 function setZoomFitMode(mode) {
-	if (mode === 'none' || mode === 'width' || mode === 'height') zoomFitMode = mode
+	if (mode === 'none' || mode === 'width' || mode === 'height' || mode === 'lyrics') zoomFitMode = mode
 }
 
 function getZoomFitMode() {

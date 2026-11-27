@@ -9,14 +9,22 @@ import { exportLilypond } from './exporter.js'
 import { score, setPlaybackHighlighter, setFocusedStaves } from './layout/typeset.js'
 import { blank } from './editing.js'
 import { MusicContext } from './context.js'
-import { PlaybackController } from './audio.js'
+import { PlaybackController, buildNoteEvents, buildTempoMap, ticksToSeconds } from './audio.js'
 import { PlaybackHighlighter } from './playback-highlight.js'
 import { PianoKeyboard } from './piano-keyboard.js'
 import { parseMusicXML, isMusicXMLFile } from './musicxml-import.js'
 import { initSampleScores } from './sample-scores.js'
 import { buildPlaybackSegments } from './playback-order.js'
-import { buildTempoMap, ticksToSeconds } from './audio.js'
 import { collectMeasures, buildMeasureOccurrences, resolveLoop, swipePageDirection, leadInPlan, scheduleLeadIn } from './practice.js'
+import { readViewerSettings, writeViewerSettings } from './viewer-settings.js'
+import { buildLyricLines, currentLyric } from './lyric-follow.js'
+
+let viewerSettings = readViewerSettings(localStorage)
+
+function persistViewerSettings(changes) {
+	viewerSettings = { ...viewerSettings, ...changes }
+	writeViewerSettings(localStorage, viewerSettings)
+}
 
 /**********************
  *
@@ -352,6 +360,76 @@ const playBtn = document.getElementById('play')
 const fullscreenPlayBtn = document.getElementById('fullscreen_play_toggle')
 const progressBar = document.getElementById('progress_bar')
 const timeLabel = document.getElementById('playback_time')
+const lyricBanner = document.getElementById('lyric_line')
+const lyricText = document.getElementById('lyric_line_text')
+const lyricPartLabel = document.getElementById('lyric_part_label')
+const lyricPartSelect = document.getElementById('lyric_part_select')
+const lyricPartPicker = document.getElementById('lyric_part_picker')
+let lyricNotes = []
+let lyricLines = []
+let shownLyricLine = -1
+let shownLyricEntry = -1
+let lyricSpans = []
+
+function updateLyricLine(time) {
+	const active = currentLyric(lyricLines, time)
+	if (!active || !lyricBanner || !lyricText) {
+		if (lyricBanner) lyricBanner.hidden = true
+		return
+	}
+	lyricBanner.hidden = false
+	if (active.lineIndex !== shownLyricLine) {
+		lyricSpans = lyricLines[active.lineIndex].entries.map(entry => {
+			const span = document.createElement('span')
+			span.textContent = entry.separator + entry.text
+			return span
+		})
+		lyricText.replaceChildren(...lyricSpans)
+		lyricText.scrollLeft = 0
+		shownLyricLine = active.lineIndex
+		shownLyricEntry = -1
+	}
+	if (active.entryIndex !== shownLyricEntry) {
+		lyricSpans.forEach((span, index) => {
+			span.classList.toggle('sung', index < active.entryIndex)
+			span.classList.toggle('current', index === active.entryIndex)
+		})
+		const span = lyricSpans[active.entryIndex]
+		if (span) lyricText.scrollTo({ left: Math.max(0, span.offsetLeft - lyricText.offsetLeft - lyricText.clientWidth * 0.18), behavior: 'smooth' })
+		shownLyricEntry = active.entryIndex
+	}
+}
+
+function refreshLyricLines() {
+	const selected = Array.from(partCheckboxContainer?.querySelectorAll('input[type="checkbox"]') || [])
+		.filter(cb => cb.checked).map(cb => Number(cb.dataset.staffIndex))
+	const lyricParts = [...new Set(lyricNotes.filter(note => note.token?.text).map(note => note.staffIndex))].sort((a, b) => a - b)
+	const part = lyricParts.includes(viewerSettings.lyricPart) ? viewerSettings.lyricPart
+		: selected.find(index => lyricParts.includes(index)) ?? lyricParts[0]
+	for (const picker of [lyricPartSelect, lyricPartPicker]) {
+		if (!picker) continue
+		picker.replaceChildren(...lyricParts.map(index => {
+			const option = document.createElement('option')
+			option.value = String(index)
+			const staff = scoreManager.getData()?.score?.staves?.[index]
+			option.textContent = `${index + 1}: ${staff?.staff_name || staff?.staff_label || `파트 ${index + 1}`}`
+			return option
+		}))
+		if (part != null) picker.value = String(part)
+	}
+	if (lyricPartLabel) lyricPartLabel.hidden = lyricParts.length < 2
+	lyricLines = part == null ? [] : buildLyricLines(lyricNotes, [part])
+	shownLyricLine = -1
+	shownLyricEntry = -1
+	updateLyricLine(playback.currentTime)
+}
+
+for (const picker of [lyricPartSelect, lyricPartPicker]) {
+	if (picker) picker.onchange = () => {
+		persistViewerSettings({ lyricPart: Number(picker.value) })
+		refreshLyricLines()
+	}
+}
 
 function setPlaybackButtonState(playing) {
 	const label = playing ? '일시정지' : '재생'
@@ -375,6 +453,7 @@ playback.onTime((t, dur) => {
 	}
 	timeLabel.textContent = formatTime(t) + ' / ' + formatTime(dur)
 	highlighter.updateTime(t)
+	updateLyricLine(t)
 })
 
 // highlighter no longer listens to these — it derives active-note
@@ -400,6 +479,7 @@ playback.onEnd(() => {
 	timeLabel.textContent = formatTime(0) + ' / ' + formatTime(playback.duration)
 	highlighter.stop()
 	pianoKeyboard.clear()
+	updateLyricLine(0)
 })
 
 // Tracks which score data is currently loaded into the scheduler, so
@@ -438,9 +518,10 @@ function updatePracticeTimeline(data) {
 	for (const input of [document.getElementById('loop_start'), document.getElementById('loop_end')]) {
 		if (input) input.max = max
 	}
-	if (document.getElementById('loop_end') && !document.getElementById('loop_enabled')?.checked) {
-		document.getElementById('loop_end').value = max
-	}
+	const startInput = document.getElementById('loop_start')
+	const endInput = document.getElementById('loop_end')
+	if (startInput) startInput.value = Math.min(max, viewerSettings.loopStart ?? 1)
+	if (endInput) endInput.value = Math.min(max, viewerSettings.loopEnd ?? max)
 	updatePracticeLoop()
 }
 
@@ -500,10 +581,18 @@ async function togglePlayPause() {
 				if (_pendingSeekTime != null) playback.seek(_pendingSeekTime)
 				_pendingSeekTime = null
 			}
+			if (playback.duration > 0 && playback.currentTime >= playback.duration - 0.01) {
+				playback.seek(0)
+				highlighter.seek(0)
+				updateLyricLine(0)
+				progressBar.value = 0
+				timeLabel.textContent = formatTime(0) + ' / ' + formatTime(playback.duration)
+			}
 			updatePracticeLoop()
 			if (practiceLoop && (playback.currentTime < practiceLoop.start || playback.currentTime >= practiceLoop.end)) {
 				playback.seek(practiceLoop.start)
 				highlighter.seek(practiceLoop.start)
+				updateLyricLine(practiceLoop.start)
 			}
 			if (playback.currentTime <= 0.01 || (practiceLoop && Math.abs(playback.currentTime - practiceLoop.start) < 0.01)) {
 				await playLeadIn(data, playback.currentTime, requestId)
@@ -583,6 +672,7 @@ if (highlightSelect) {
 		playback.seek(time)
 		if (scoreManager.getData() !== _loadedPlaybackData) _pendingSeekTime = time
 		highlighter.seek(time)
+		updateLyricLine(time)
 		timeLabel.textContent = formatTime(time) + ' / ' + formatTime(playback.duration)
 
 		// Update progress bar position
@@ -598,6 +688,7 @@ if (autoScrollBtn) {
 	autoScrollBtn.onclick = () => {
 		const enabled = highlighter.toggleAutoScroll()
 		autoScrollBtn.classList.toggle('active', enabled)
+		persistViewerSettings({ autoScroll: enabled })
 	}
 }
 
@@ -623,6 +714,7 @@ async function applyPartSelection() {
 		}
 	})
 	const mode = document.querySelector('input[name="practice_mix"]:checked')?.value || 'all'
+	refreshLyricLines()
 	playback.setPracticeSelection(selected, mode)
 	setFocusedStaves(document.getElementById('focus_part')?.checked ? selected : null)
 	const hint = document.getElementById('practice_hint')
@@ -663,10 +755,11 @@ function updatePartCheckboxes(data) {
 
 		const cb = document.createElement('input')
 		cb.type = 'checkbox'
-		cb.checked = true
+		cb.checked = viewerSettings.selectedParts == null || viewerSettings.selectedParts.includes(i)
 		cb.dataset.staffIndex = String(i)
 		cb.onchange = async () => {
 			await applyPartSelection()
+			persistSelectedParts()
 		}
 
 		const textSpan = document.createElement('span')
@@ -685,15 +778,32 @@ function updatePartCheckboxes(data) {
 }
 
 document.querySelectorAll('input[name="practice_mix"]').forEach(radio => {
-	radio.addEventListener('change', () => applyPartSelection())
+	radio.addEventListener('change', () => {
+		persistViewerSettings({ practiceMix: radio.value })
+		applyPartSelection()
+	})
 })
-document.getElementById('focus_part')?.addEventListener('change', () => applyPartSelection())
+document.getElementById('focus_part')?.addEventListener('change', event => {
+	persistViewerSettings({ focusPart: event.target.checked })
+	applyPartSelection()
+})
 for (const id of ['loop_enabled', 'loop_start', 'loop_end']) {
-	document.getElementById(id)?.addEventListener('change', updatePracticeLoop)
+	document.getElementById(id)?.addEventListener('change', () => {
+		persistViewerSettings({
+			loopEnabled: document.getElementById('loop_enabled')?.checked ?? false,
+			loopStart: Number(document.getElementById('loop_start')?.value) || 1,
+			loopEnd: Number(document.getElementById('loop_end')?.value) || 1,
+		})
+		updatePracticeLoop()
+	})
 }
 document.getElementById('auto_page_turn')?.addEventListener('change', event => {
 	highlighter.setAutoPageTurn(event.target.checked)
+	persistViewerSettings({ autoPageTurn: event.target.checked })
 })
+for (const [id, key] of [['count_in', 'countIn'], ['start_note', 'startNote']]) {
+	document.getElementById(id)?.addEventListener('change', event => persistViewerSettings({ [key]: event.target.checked }))
+}
 
 if (partsAllBtn) {
 	partsAllBtn.onclick = async () => {
@@ -707,7 +817,14 @@ if (partsAllBtn) {
 			if (label) label.style.opacity = targetState ? '1' : '0.45'
 		})
 		await applyPartSelection()
+		persistSelectedParts()
 	}
+}
+
+function persistSelectedParts() {
+	const selectedParts = Array.from(partCheckboxContainer?.querySelectorAll('input[type="checkbox"]') || [])
+		.filter(cb => cb.checked).map(cb => Number(cb.dataset.staffIndex))
+	persistViewerSettings({ selectedParts })
 }
 
 // Octave shift buttons (-2 to +2 range)
@@ -732,6 +849,7 @@ if (octaveDownBtn) {
 		if (currentOctaveShift > -2) {
 			currentOctaveShift--
 			updateOctaveUI()
+			persistViewerSettings({ octave: currentOctaveShift })
 		}
 		e.currentTarget.blur()
 	}
@@ -742,6 +860,7 @@ if (octaveUpBtn) {
 		if (currentOctaveShift < 2) {
 			currentOctaveShift++
 			updateOctaveUI()
+			persistViewerSettings({ octave: currentOctaveShift })
 		}
 		e.currentTarget.blur()
 	}
@@ -769,17 +888,19 @@ progressBar.addEventListener('pointerup', () => {
 	const t = parseFloat(progressBar.value) * playback.duration
 	playback.seek(t)
 	highlighter.seek(t)
+	updateLyricLine(t)
 })
 progressBar.addEventListener('input', () => {
 	const t = parseFloat(progressBar.value) * playback.duration
 	timeLabel.textContent = formatTime(t) + ' / ' + formatTime(playback.duration)
+	updateLyricLine(t)
 })
 
 // Speed control
 const speedSlider = document.getElementById('speed_slider')
 const speedInput = document.getElementById('speed_input')
 
-function applySpeed(val) {
+function applySpeed(val, save = true) {
 	const n = parseFloat(val)
 	if (!isFinite(n) || n <= 0) return
 	const clamped = Math.max(0.1, Math.min(4, n))
@@ -787,6 +908,7 @@ function applySpeed(val) {
 	// Keep slider and input in sync (slider max is 3, input max is 4)
 	speedSlider.value = Math.min(clamped, parseFloat(speedSlider.max))
 	speedInput.value = clamped
+	if (save) persistViewerSettings({ speed: clamped })
 }
 
 if (speedSlider) {
@@ -801,11 +923,14 @@ if (speedInput) {
 const volumeSlider = document.getElementById('volume_slider')
 const volumeLabel = document.getElementById('volume_label')
 
-function applyVolume(val) {
+function applyVolume(val, save = true) {
 	const n = parseFloat(val)
 	if (!isFinite(n) || n < 0) return
-	playback.setVolume(n)
-	if (volumeLabel) volumeLabel.textContent = Math.round(n * 100) + '%'
+	const clamped = Math.min(1.5, n)
+	playback.setVolume(clamped)
+	volumeSlider.value = clamped
+	if (volumeLabel) volumeLabel.textContent = Math.round(clamped * 100) + '%'
+	if (save) persistViewerSettings({ volume: clamped })
 }
 
 if (volumeSlider) {
@@ -828,6 +953,8 @@ const rerender = () => {
 
 				// Update highlighter with new layout positions
 				highlighter.setScore(data)
+				lyricNotes = buildNoteEvents(data).notes
+				refreshLyricLines()
 				updatePracticeTimeline(data)
 			},
 			null,
@@ -876,10 +1003,6 @@ function updateScoreInfoBanner(info) {
 function setDataAndRender(_data) {
 	playRequestId++
 	cancelLeadIn()
-	const loopStartInput = document.getElementById('loop_start')
-	const loopEndInput = document.getElementById('loop_end')
-	if (loopStartInput) loopStartInput.value = 1
-	if (loopEndInput) loopEndInput.value = 1
 	// Stop existing playback & clear keyboard when loading a new score
 	if (playback) {
 		playback.stop()
@@ -898,6 +1021,8 @@ function setDataAndRender(_data) {
 	}
 
 	scoreManager.setData(_data)
+	lyricNotes = []
+	refreshLyricLines()
 	updatePartCheckboxes(_data)
 	updateScoreInfoBanner(_data?.info)
 	rerender()
@@ -1258,7 +1383,7 @@ function updateCurrentPageFromScroll() {
 }
 
 // ---------------------------------------------------------------------------
-// Zoom Fit Mode (width / height) — buttons next to zoom slider
+// Zoom Fit Mode (width / height / lyrics)
 // ---------------------------------------------------------------------------
 
 const ZOOM_FIT_STORAGE_KEY = 'nwc_zoom_fit'
@@ -1281,55 +1406,35 @@ function applyZoomFit() {
 		newZoom = viewportW / maxCanvasWidth
 	} else if (mode === 'height') {
 		newZoom = viewportH / maxCanvasHeight
+	} else if (mode === 'lyrics') {
+		newZoom = viewportW / maxCanvasWidth
 	}
 
 	if (newZoom) {
-		setZoomLevel(newZoom)
 		if (window.applyZoom) window.applyZoom(newZoom)
+		else setZoomLevel(newZoom)
 	}
 }
-
-/**
- * Called when the user manually drags the zoom slider.
- * Disengages any active fit mode and applies the zoom.
- */
-function onZoomSliderInput(value) {
-	setZoomFitMode('none')
-	updateFitButtonsUI()
-	localStorage.removeItem(ZOOM_FIT_STORAGE_KEY)
-	if (window.applyZoom) window.applyZoom(value)
-}
-window.onZoomSliderInput = onZoomSliderInput
 
 function updateFitButtonsUI() {
 	const mode = getZoomFitMode()
 	const fitW = document.getElementById('fit_width_btn')
 	const fitH = document.getElementById('fit_height_btn')
+	const fitLyrics = document.getElementById('fit_lyrics_btn')
 	if (fitW) fitW.classList.toggle('active', mode === 'width')
 	if (fitH) fitH.classList.toggle('active', mode === 'height')
+	if (fitLyrics) fitLyrics.classList.toggle('active', mode === 'lyrics')
+	document.body.classList.toggle('lyrics-mode', mode === 'lyrics')
+	updateLyricLine(playback.currentTime)
 }
 
-// Fit Width button
-const fitWidthBtn = document.getElementById('fit_width_btn')
-if (fitWidthBtn) {
-	fitWidthBtn.onclick = () => {
-		const newMode = getZoomFitMode() === 'width' ? 'none' : 'width'
-		setZoomFitMode(newMode)
-		localStorage.setItem(ZOOM_FIT_STORAGE_KEY, newMode)
+for (const [id, mode] of [['fit_width_btn', 'width'], ['fit_height_btn', 'height'], ['fit_lyrics_btn', 'lyrics']]) {
+	const button = document.getElementById(id)
+	if (button) button.onclick = () => {
+		setZoomFitMode(mode)
+		localStorage.setItem(ZOOM_FIT_STORAGE_KEY, mode)
 		updateFitButtonsUI()
-		if (newMode !== 'none') applyZoomFit()
-	}
-}
-
-// Fit Height button
-const fitHeightBtn = document.getElementById('fit_height_btn')
-if (fitHeightBtn) {
-	fitHeightBtn.onclick = () => {
-		const newMode = getZoomFitMode() === 'height' ? 'none' : 'height'
-		setZoomFitMode(newMode)
-		localStorage.setItem(ZOOM_FIT_STORAGE_KEY, newMode)
-		updateFitButtonsUI()
-		if (newMode !== 'none') applyZoomFit()
+		applyZoomFit()
 	}
 }
 
@@ -1368,10 +1473,8 @@ if (storedPageView) {
 	if (pageViewModeSelect) pageViewModeSelect.value = storedPageView
 }
 const storedZoomFit = localStorage.getItem(ZOOM_FIT_STORAGE_KEY)
-if (storedZoomFit === 'width' || storedZoomFit === 'height') {
+if (storedZoomFit === 'width' || storedZoomFit === 'height' || storedZoomFit === 'lyrics') {
 	setZoomFitMode(storedZoomFit)
-} else if (storedZoomFit === 'none') {
-	setZoomFitMode('none')
 } else {
 	setZoomFitMode('width')
 }
@@ -1423,6 +1526,7 @@ function updateMenuToggle() {
 
 function setMenuSimple(on) {
 	document.body.classList.toggle('menu-simple', on)
+	persistViewerSettings({ menuSimple: on })
 	updateMenuToggle()
 	requestAnimationFrame(() => {
 		resizeToFit()
@@ -1523,8 +1627,42 @@ var storedProp = localStorage.getItem(PROP_STORAGE_KEY)
 if (storedProp !== null) setDurationProportionality(parseFloat(storedProp))
 updateProportionalityUI()
 
+function restoreViewerSettings() {
+	if (viewerSettings.speed != null) applySpeed(viewerSettings.speed, false)
+	if (viewerSettings.volume != null) applyVolume(viewerSettings.volume, false)
+	if (viewerSettings.octave != null) {
+		currentOctaveShift = viewerSettings.octave
+		updateOctaveUI()
+	}
+	if (viewerSettings.autoScroll === false && highlighter.autoScrollEnabled) {
+		highlighter.toggleAutoScroll()
+		autoScrollBtn?.classList.toggle('active', false)
+	}
+	for (const [id, key] of [
+		['loop_enabled', 'loopEnabled'], ['count_in', 'countIn'], ['start_note', 'startNote'],
+		['focus_part', 'focusPart'], ['auto_page_turn', 'autoPageTurn'],
+	]) {
+		const input = document.getElementById(id)
+		if (input && viewerSettings[key] != null) input.checked = viewerSettings[key]
+	}
+	for (const [id, key] of [['loop_start', 'loopStart'], ['loop_end', 'loopEnd']]) {
+		const input = document.getElementById(id)
+		if (input && viewerSettings[key] != null) input.value = viewerSettings[key]
+	}
+	if (viewerSettings.practiceMix) {
+		const radio = document.querySelector(`input[name="practice_mix"][value="${viewerSettings.practiceMix}"]`)
+		if (radio) radio.checked = true
+	}
+	if (viewerSettings.autoPageTurn != null) highlighter.setAutoPageTurn(viewerSettings.autoPageTurn)
+	if (viewerSettings.menuSimple != null) {
+		document.body.classList.toggle('menu-simple', viewerSettings.menuSimple)
+		updateMenuToggle()
+	}
+}
+
 // ---- Initial score: a file handed off from the converter page, or blank ----
 
+restoreViewerSettings()
 initSampleScores((payload, filename) => {
 	playback.stop()
 	pianoKeyboard.clear()
