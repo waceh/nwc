@@ -1,0 +1,16 @@
+{
+  "id": "./",
+  "name": "NWC Converter & Viewer",
+  "short_name": "NWC Viewer",
+  "lang": "ko",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0f0f13",
+  "theme_color": "#0f0f13",
+  "icons": [
+    { "src": "icons/nwc-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/nwc-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/nwc-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
